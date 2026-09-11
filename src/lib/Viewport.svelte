@@ -229,13 +229,36 @@
       }
     }
 
+    // OrbitControls binds left-drag to rotate, middle-drag to dolly, and
+    // right-drag to pan — all three of this app's own actions (place/
+    // pickup, delete, cancel) sit on the same buttons. Firing on
+    // pointerdown meant just STARTING an orbit drag fired the action too
+    // (e.g. every camera reposition mid-placement dropped a spurious
+    // piece). Fixed by deferring to pointerup, and only firing if the
+    // pointer didn't move more than a few pixels since the matching
+    // pointerdown — a real click, not a drag.
+    const CLICK_DRAG_THRESHOLD = 5; // pixels
+    let downAt: { x: number; y: number; button: number } | null = null;
+
     function handlePointerDown(event: PointerEvent) {
+      downAt = { x: event.clientX, y: event.clientY, button: event.button };
+      if (event.button === 1) event.preventDefault(); // suppress middle-click autoscroll
+    }
+
+    function handlePointerUp(event: PointerEvent) {
+      if (!downAt || downAt.button !== event.button) {
+        downAt = null;
+        return;
+      }
+      const moved = Math.hypot(event.clientX - downAt.x, event.clientY - downAt.y) > CLICK_DRAG_THRESHOLD;
+      downAt = null;
+      if (moved) return; // was a camera drag, not a click
+
       updatePointerNdc(event);
 
       if (event.button === 1) {
         // Middle click: delete whatever's under the cursor, regardless of
         // any in-progress placement/move.
-        event.preventDefault();
         deleteAt();
         return;
       }
@@ -312,6 +335,7 @@
 
     canvas.addEventListener('pointermove', handlePointerMove);
     canvas.addEventListener('pointerdown', handlePointerDown);
+    canvas.addEventListener('pointerup', handlePointerUp);
     canvas.addEventListener('contextmenu', handleContextMenu);
     window.addEventListener('keydown', handleKeyDown);
     window.addEventListener('keyup', handleKeyUp);
@@ -378,6 +402,7 @@
       window.removeEventListener('keyup', handleKeyUp);
       canvas.removeEventListener('pointermove', handlePointerMove);
       canvas.removeEventListener('pointerdown', handlePointerDown);
+      canvas.removeEventListener('pointerup', handlePointerUp);
       canvas.removeEventListener('contextmenu', handleContextMenu);
       renderer.dispose();
     };
