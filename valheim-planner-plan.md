@@ -231,10 +231,9 @@ unblocked right now," not a dependency graph to work simultaneously.
   verified present in both `pieces-dump.json` and the cost data before
   picking them.
 - ~~Hand-author shape/material-family mapping~~ Done as part of building
-  `pieces.json` (below) rather than as a separate artifact — three shapes
-  cover all 18: `box` (most pieces), `cylinder` (poles — a round pole
-  rendered as a box would look wrong), `wedge` (roofs/stairs, via
-  `ExtrudeGeometry` on a triangle profile).
+  `pieces.json` (below) rather than as a separate artifact. Turned out to
+  need six shapes, not the three originally guessed — see "Shape mapping
+  is an ongoing task, not a one-time list" below for why.
 - ~~Stub `pieces.json`~~ **Skipped the stub** — Track A already had real
   data in hand (bounds/center/snap points from `pieces-dump.json`, costs
   from `bpcsaveall`), so `src/data/pieces.json` was built from real data
@@ -260,9 +259,40 @@ unblocked right now," not a dependency graph to work simultaneously.
   block (fixed, confirmed correct); stairs are visibly stepped, not flat
   (given their own `stairs` shape — zigzag profile extruded across width);
   the ladder is an open rail+rung frame, not a solid surface either (given
-  its own `ladder` shape — two rails + evenly spaced rungs, merged). All
-  three now confirmed correct by eye. `cylinder` (poles) and `box`
-  (everything else) needed no changes.
+  its own `ladder` shape — two rails + evenly spaced rungs, merged). The
+  gate was first given a `frame` shape (open frame + crossbars, same idea
+  as the ladder) since a solid box read as indistinguishable from a wall —
+  but on closer inspection its *bounds* turned out wrong (see below), so it
+  went back to `box`. `wood_fence` got the `frame` treatment gate was
+  wrongly given, since fence's bounds are a proper wide panel.  `cylinder`
+  (poles) needed no changes. Final shape set: `box`, `cylinder`, `wedge`
+  (roofs), `stairs`, `ladder`, `frame` (fence).
+
+### Shape mapping is an ongoing task, not a one-time list
+
+Two lessons from getting the 18 MVP pieces right, both apply well beyond
+this batch — worth remembering whenever the catalog grows past wood tier:
+
+1. **Any "functional" piece (not a plain structural wall/floor/roof) likely
+   needs its own shape**, not just a box, to read as distinct from
+   structural pieces at a glance — doors, gates, fences, ladders, stairs,
+   windows, and probably more as the catalog grows. This isn't a fixed list
+   that gets written once; it's per-piece visual judgment, most practically
+   done by looking at the deployed result the way this MVP batch was
+   checked, not guessed up front.
+2. **Some pieces' extracted bounds may only cover a structural sub-part of
+   a compound/animated object, not the full visual piece** — confirmed for
+   `wood_gate`: its bounds (`{x:0.3, y:3, z:0.5}`) look like a single hinge
+   post, not a full gate leaf, unlike `wood_door`'s properly proportioned
+   `{x:2, y:2.02, z:0.5}`. No shape primitive fixes a wrong bounding box —
+   giving a bad box a fancy frame just produces a *differently* wrong
+   shape (confirmed: looked "like a narrow bookshelf"). The honest fix is
+   rendering what the data actually represents (here, a plain box/beam),
+   not dressing it up. Compound/animated pieces (anything hinged, or with
+   moving parts) are the ones to watch for this; if it recurs often once
+   the catalog grows, worth revisiting the extractor's bounds capture for
+   those specifically rather than working around it per-piece in the
+   webapp.
 
 **Still needed — the bulk of the remaining work:**
 - Placement UX: cursor raycast → ghost mesh preview → snap-point highlight
