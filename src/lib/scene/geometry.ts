@@ -197,9 +197,17 @@ function roofCornerGeometry(
   const thickness = 0.08;
   const w = width / 2;
   const d = depth / 2;
+  // Raw corner heights span [0, height] — shift down by height/2 so the
+  // geometry is centered on its own local origin like every other shape
+  // (box/panel/etc. all span ±bounds.y/2 around local zero). positionMesh
+  // combines pos + rotate(center) assuming that convention; building this
+  // one asymmetric (spanning [0, height] instead) put it out of alignment
+  // with every adjacent piece — this was the actual bug, not a slope or
+  // topology mismatch.
+  const low = -height / 2;
+  const high = height / 2;
 
-  const heights =
-    style === 'hip' ? { A: 0, B: 0, C: height, D: 0 } : { A: 0, B: height, C: height, D: height };
+  const heights = style === 'hip' ? { A: low, B: low, C: high, D: low } : { A: low, B: high, C: high, D: high };
 
   const A = new THREE.Vector3(-w, heights.A, -d);
   const B = new THREE.Vector3(w, heights.B, -d);
