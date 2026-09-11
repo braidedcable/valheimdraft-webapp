@@ -213,36 +213,54 @@ unblocked right now," not a dependency graph to work simultaneously.
 
 ### Track B — devcontainer, proceeds regardless of Track A
 
-**Blocked on nothing — start anytime:**
-- Vite + Svelte scaffold, with the GitHub Pages base-path set correctly.
-- GitHub Actions workflow to build and deploy to `gh-pages`. Deploy the
-  empty scaffold immediately — a base-path bug is a 5-minute fix against a
-  blank page, and an archaeology session against a finished scene.
-- Attribution page + "unofficial fan project" disclaimer, wired into the
-  header/footer. Static content, zero dependencies on anything else — the
-  ground rules already say "day one," so build it with the first deploy
-  rather than leaving it for later.
-- Pin the ~15-20 MVP wood-tier prefab names (from the public Jötunn prefab
-  list).
-- Hand-author a `prefab → shape primitive + material-family color` mapping
-  for those pieces. This exists in no dump; it's the actual content behind
-  the "procedural geometry, flat material colors" art strategy.
-- A stub `pieces.json` — 3-4 fake wood pieces in the real schema
-  (`{prefab, bounds:{x,y,z}, snapPoints:[{pos:{x,y,z}, rot:{x,y,z,w}}]}`,
-  matching the extractor's output). Everything below builds against this;
-  Track A's real data is a drop-in swap once it lands.
-- Scene-state shape: `{prefab, pos:{x,y,z}, rot:{x,y,z,w}}` — same shape
-  `.vbuild` needs. A ten-minute decision, not a phase.
+**Done:**
+- ~~Vite + Svelte scaffold~~ Vite + Svelte + TS, GH Pages `base` path set
+  (`/valheimdraft-webapp/`), demo boilerplate stripped.
+- ~~GitHub Actions workflow~~ `.github/workflows/deploy.yml`, builds and
+  deploys via the modern Actions-based Pages flow (`upload-pages-artifact` +
+  `deploy-pages`). **Needs one manual step**: repo Settings → Pages →
+  Source → GitHub Actions — couldn't set this via API (same token
+  permission limit as repo creation earlier). Won't actually deploy until
+  that's flipped.
+- ~~Attribution page + disclaimer~~ Toggled from the header; credits
+  BuildPiecesCustomized (Unlicense), Jötunn (MIT), and the weirdgloop wiki
+  (CC BY-NC-SA 3.0) — licenses checked from source, not assumed. Disclaimer
+  in header and footer.
+- ~~Pin the MVP wood-tier prefab list~~ 18 pieces (floor ×2, wall ×3, pole
+  ×2, beam, door, stair, roof ×4, gate, fence, window, stepladder) — all
+  verified present in both `pieces-dump.json` and the cost data before
+  picking them.
+- ~~Hand-author shape/material-family mapping~~ Done as part of building
+  `pieces.json` (below) rather than as a separate artifact — three shapes
+  cover all 18: `box` (most pieces), `cylinder` (poles — a round pole
+  rendered as a box would look wrong), `wedge` (roofs/stairs, via
+  `ExtrudeGeometry` on a triangle profile).
+- ~~Stub `pieces.json`~~ **Skipped the stub** — Track A already had real
+  data in hand (bounds/center/snap points from `pieces-dump.json`, costs
+  from `bpcsaveall`), so `src/data/pieces.json` was built from real data
+  directly. Also dedupes the confirmed exact-duplicate-snap-point gap at
+  load time (`ashwood_stair`-style duplicates), per the "known extractor
+  gaps" note that this belongs in the webapp loader.
+- ~~Scene-state shape~~ Not yet formalized in code (no persistence/`.vbuild`
+  work started), but the decision stands: `{prefab, pos:{x,y,z}, rot:{x,y,z,w}}`.
 
-**Needs the scaffold + stub data:**
-- Three.js scene: procedurally sized meshes per piece, flat material-family
-  colors.
-- Camera: free orbit + locked presets (top-down, front, iso-45°), pan and
-  zoom.
-- Piece palette UI, populated from `pieces.json`.
+**Also done, ahead of "needs scaffold + stub data" below:**
+- Three.js viewport (`src/lib/Viewport.svelte`): procedural geometry sized
+  from each piece's real bounds, flat material-family colors, OrbitControls
+  with iso/top/front camera presets. Renders the whole palette in a grid as
+  an end-to-end sanity check of the art strategy — **not real placement UX**.
+- Piece palette UI (`src/lib/PiecePalette.svelte`) — read-only list of
+  names + costs for now; click-to-select/place is placement UX, not built.
+- Build and `svelte-check` both pass clean. **Not visually verified** — no
+  browser in this environment. The `wedge` geometry (`geometry.ts`) is the
+  one piece of hand-written geometry logic (vs. native `BoxGeometry`/
+  `CylinderGeometry`) and needs a look via `npm run dev` — orientation and
+  face visibility aren't guaranteed right without eyes on it.
+
+**Still needed — the bulk of the remaining work:**
 - Placement UX: cursor raycast → ghost mesh preview → snap-point highlight
-  → click to commit, plus rotate/remove hotkeys. Expect this to be the bulk
-  of the work — sequence it last within this group.
+  → click to commit, plus rotate/remove hotkeys. Turns the palette from a
+  read-only list into an actual editor.
 
 **Needs the scene-state shape (not placement UX being finished):**
 - Save/load to `localStorage`.
@@ -251,8 +269,9 @@ unblocked right now," not a dependency graph to work simultaneously.
 - Undo/redo (state snapshots).
 - Shareable URL (encode state in the hash).
 
-**Needs Track A's cost data:**
-- Materials cost tally (merge costs into `pieces.json`, sum on the fly).
+**Cost data is in** (`pieces.json` already carries each piece's `cost`
+array) — materials cost tally is now just UI work: sum `cost` across placed
+pieces and render it, no longer blocked on Track A.
 
 **Explicitly deferred past MVP:**
 - Structural integrity simulation (Valheim's beam-support rules).
