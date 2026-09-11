@@ -1081,7 +1081,7 @@
     {
       "prefab": "wood_gate",
       "label": "Wood Gate",
-      "shape": "frame",
+      "shape": "box",
       "materialFamily": "wood",
       "bounds": {
         "x": 0.3,
@@ -1158,7 +1158,7 @@
     {
       "prefab": "wood_fence",
       "label": "Wood Fence",
-      "shape": "box",
+      "shape": "frame",
       "materialFamily": "wood",
       "bounds": {
         "x": 2.707283,
