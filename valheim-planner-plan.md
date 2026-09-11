@@ -173,6 +173,17 @@ Jared's at that machine; Track B proceeds regardless. Within Track B nothing
 is truly parallel — it's a solo project — so the grouping below is "what's
 unblocked right now," not a dependency graph to work simultaneously.
 
+**Status as of this session's end:** the app is live and functional —
+https://braidedcable.github.io/valheimdraft-webapp/. You can place, snap,
+rotate, relocate, and delete all 18 MVP wood-tier pieces, with working
+camera controls (orbit, WASD pan, presets). Next actionable items, roughly
+smallest-first: materials cost tally (data's already in `pieces.json`, pure
+UI work), `localStorage` save/load, JSON export/import, `.vbuild` export,
+undo/redo, shareable URL — all detailed under Track B below. Track A has one
+outstanding item verified only by code review, not in-game
+(item 5, `bpcsaveall` automation) — low priority, current data already in
+hand covers what's needed.
+
 ### Track A — needs Jared's Windows machine
 
 1. ~~Copy `Documents\ValheimDraft\pieces-dump.json` into this devcontainer~~
@@ -218,10 +229,10 @@ unblocked right now," not a dependency graph to work simultaneously.
   (`/valheimdraft-webapp/`), demo boilerplate stripped.
 - ~~GitHub Actions workflow~~ `.github/workflows/deploy.yml`, builds and
   deploys via the modern Actions-based Pages flow (`upload-pages-artifact` +
-  `deploy-pages`). **Needs one manual step**: repo Settings → Pages →
-  Source → GitHub Actions — couldn't set this via API (same token
-  permission limit as repo creation earlier). Won't actually deploy until
-  that's flipped.
+  `deploy-pages`). Pages source is set to GitHub Actions (done manually —
+  couldn't set via API, same token permission limit as repo creation).
+  **Live and deploying successfully on every push**:
+  https://braidedcable.github.io/valheimdraft-webapp/
 - ~~Attribution page + disclaimer~~ Toggled from the header; credits
   BuildPiecesCustomized (Unlicense), Jötunn (MIT), and the weirdgloop wiki
   (CC BY-NC-SA 3.0) — licenses checked from source, not assumed. Disclaimer
@@ -232,7 +243,7 @@ unblocked right now," not a dependency graph to work simultaneously.
   picking them.
 - ~~Hand-author shape/material-family mapping~~ Done as part of building
   `pieces.json` (below) rather than as a separate artifact. Turned out to
-  need six shapes, not the three originally guessed — see "Shape mapping
+  need eight shapes, not the three originally guessed — see "Shape mapping
   is an ongoing task, not a one-time list" below for why.
 - ~~Stub `pieces.json`~~ **Skipped the stub** — Track A already had real
   data in hand (bounds/center/snap points from `pieces-dump.json`, costs
@@ -243,36 +254,27 @@ unblocked right now," not a dependency graph to work simultaneously.
 - ~~Scene-state shape~~ Not yet formalized in code (no persistence/`.vbuild`
   work started), but the decision stands: `{prefab, pos:{x,y,z}, rot:{x,y,z,w}}`.
 
-**Also done, ahead of "needs scaffold + stub data" below:**
-- Three.js viewport (`src/lib/Viewport.svelte`): procedural geometry sized
-  from each piece's real bounds, flat material-family colors, OrbitControls
-  with iso/top/front camera presets. Renders the whole palette in a grid as
-  an end-to-end sanity check of the art strategy — **not real placement UX**.
-- Piece palette UI (`src/lib/PiecePalette.svelte`) — read-only list of
-  names + costs for now; click-to-select/place is placement UX, not built.
-- Build and `svelte-check` both pass clean. **Visually verified against the
-  deployed site** (this environment has no browser, so this had to happen
-  on the live GitHub Pages deploy rather than `npm run dev` locally).
-  Deployed 4 times over the course of getting it right: `wedge` originally
-  meant a solid triangular-prism ramp, which was wrong for every non-box
-  shape it was applied to — roofs are a thin sloped panel, not a filled
-  block (fixed, confirmed correct); stairs are visibly stepped, not flat
-  (given their own `stairs` shape — zigzag profile extruded across width);
-  the ladder is an open rail+rung frame, not a solid surface either (given
-  its own `ladder` shape — two rails + evenly spaced rungs, merged). The
-  gate was first given an open frame + horizontal-crossbar shape (same idea
-  as the ladder) since a solid box read as indistinguishable from a wall —
-  but on closer inspection its *bounds* turned out wrong (see below), so it
-  went back to `box`. `wood_fence` got that horizontal-crossbar treatment
-  next (fence's bounds are a proper wide panel, unlike gate's), but that
-  read as a bookshelf, not a fence — switched to vertical slats between two
-  rails (a picket-fence silhouette) instead, renamed shape `fence`.
-  `cylinder` (poles) needed no changes. Final shape set: `box`, `cylinder`,
-  `wedge` (roofs), `stairs`, `ladder`, `fence`.
+**Shape geometry** (`src/lib/scene/geometry.ts`) — procedural geometry sized
+from each piece's real bounds, flat material-family colors. Final set, all
+confirmed correct by eye against the deployed site (this environment has no
+browser, so every one of these was verified on the live GitHub Pages deploy,
+not locally): `box` (most pieces), `cylinder` (poles — a round pole as a box
+would look wrong), `wedge` (thin sloped panel — roofs; first attempt was a
+solid triangular-prism ramp, visibly wrong, a "thick block" not a surface),
+`stairs` (zigzag riser/tread profile — visibly stepped in-game, not a flat
+ramp like roofs), `ladder` (two rails + evenly spaced rungs, an open frame),
+`fence` (two rails + vertical slats, a picket silhouette — an earlier
+horizontal-crossbar attempt, also tried on `wood_gate` first, read as a
+bookshelf, not a fence), `hip`/`valley` (roof corners — two thin triangles
+sharing a diagonal fold, peak/valley corner grounded in each piece's real
+snap-point data after a first guess picked the wrong diagonal). `wood_gate`
+itself ended up plain `box` — its bounds turned out to represent only a
+hinge post, not a full gate leaf, and no shape primitive fixes wrong bounds
+(see lesson 2 below).
 
 ### Shape mapping is an ongoing task, not a one-time list
 
-Two lessons from getting the 18 MVP pieces right, both apply well beyond
+Three lessons from getting the 18 MVP pieces right, all apply well beyond
 this batch — worth remembering whenever the catalog grows past wood tier:
 
 1. **Any "functional" piece (not a plain structural wall/floor/roof) likely
@@ -343,6 +345,16 @@ this batch — worth remembering whenever the catalog grows past wood tier:
     next mouse-move, so a click without moving the mouse made the piece
     vanish with nothing visible in its place — reported as "still
     deletes," actually a missing initial ghost placement.
+  - Second bug, since fixed: OrbitControls binds left-drag/middle-drag/
+    right-drag to rotate/dolly/pan — the same buttons this app's own
+    actions use — and firing on `pointerdown` meant just *starting* a
+    camera drag fired the action too (e.g. repositioning the camera while
+    a piece was selected dropped a spurious piece every time). Fixed by
+    moving all action logic to `pointerup`, gated on the pointer having
+    moved less than 5px since the matching `pointerdown` — a real click,
+    not a drag.
+- Piece palette (`src/lib/PiecePalette.svelte`) is clickable — selects/
+  deselects a prefab to place, highlights the active selection.
 
 **Needs the scene-state shape (not placement UX being finished):**
 - Save/load to `localStorage`.
