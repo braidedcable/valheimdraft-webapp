@@ -296,10 +296,20 @@ this batch — worth remembering whenever the catalog grows past wood tier:
    those specifically rather than working around it per-piece in the
    webapp.
 
-**Still needed — the bulk of the remaining work:**
-- Placement UX: cursor raycast → ghost mesh preview → snap-point highlight
-  → click to commit, plus rotate/remove hotkeys. Turns the palette from a
-  read-only list into an actual editor.
+**Done and verified in-browser:**
+- Placement UX: click a palette piece to select it, ghost preview follows
+  the cursor (ground raycast), click to commit. Snapping
+  (`src/lib/scene/snapping.ts`) finds the closest pair between the ghost's
+  own snap points and any placed piece's, and if within 1m shifts the ghost
+  so that pair coincides exactly (edge-to-edge). `R` rotates the ghost 45°
+  at a time; `Esc` cancels. With nothing selected, hovering a placed piece
+  highlights it red and clicking removes it. Palette selection and placed
+  pieces are owned by `App.svelte` and bound down through `Viewport`/
+  `PiecePalette`, so state survives toggling the attribution panel.
+  **User-verified** — this was the biggest remaining unknown (raycasting,
+  pointer events, and the Svelte-reactivity-into-imperative-Three.js
+  bridge via `$effect` inside `onMount` all untestable in this
+  environment) and it works.
 
 **Needs the scene-state shape (not placement UX being finished):**
 - Save/load to `localStorage`.
