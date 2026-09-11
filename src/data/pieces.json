@@ -670,7 +670,7 @@
     {
       "prefab": "wood_stair",
       "label": "Wood Stair",
-      "shape": "wedge",
+      "shape": "stairs",
       "materialFamily": "wood",
       "bounds": {
         "x": 2.004185,
