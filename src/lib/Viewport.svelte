@@ -13,6 +13,10 @@
   } = $props();
 
   let canvas: HTMLCanvasElement;
+  // Exposed for the hint text below; mutated from inside onMount's
+  // closures like any other captured variable, but declared with $state so
+  // the template reacts to it too.
+  let movingPieceId = $state<string | null>(null);
 
   const CAMERA_PRESETS: Record<string, THREE.Vector3> = {
     iso: new THREE.Vector3(14, 14, 14),
@@ -77,6 +81,18 @@
       mesh.quaternion.copy(rot);
     }
 
+    function currentMovingPiece(): PlacedPiece | null {
+      return movingPieceId ? (placedPieces.find((p) => p.id === movingPieceId) ?? null) : null;
+    }
+
+    // What the ghost currently represents: a new piece from the palette,
+    // or an existing placed piece picked up to be relocated. The two are
+    // mutually exclusive — selecting a palette piece cancels an
+    // in-progress move (see the selectedPrefab $effect below).
+    function activePrefab(): string | null {
+      return selectedPrefab ?? currentMovingPiece()?.prefab ?? null;
+    }
+
     // --- Placed pieces ---
     const placedGroup = new THREE.Group();
     scene.add(placedGroup);
@@ -85,6 +101,7 @@
     function rebuildPlacedPieces() {
       placedGroup.clear();
       for (const placed of placedPieces) {
+        if (placed.id === movingPieceId) continue; // shown as the ghost instead
         const piece = getPieceData(placed.prefab);
         if (!piece) continue;
         const color = placed.id === hoveredPlacedId ? 0xff5555 : colorForFamily(piece.materialFamily);
@@ -110,8 +127,9 @@
       }
       pendingPos = null;
       pendingRot = null;
-      if (!selectedPrefab) return;
-      const piece = getPieceData(selectedPrefab);
+      const prefab = activePrefab();
+      if (!prefab) return;
+      const piece = getPieceData(prefab);
       if (!piece) return;
       ghostMesh = buildMesh(piece, colorForFamily(piece.materialFamily), 0.5);
       scene.add(ghostMesh);
@@ -142,9 +160,10 @@
     function handlePointerMove(event: PointerEvent) {
       updatePointerNdc(event);
 
-      if (!selectedPrefab) {
-        // Nothing to place: hovering a placed piece highlights it as the
-        // thing a click would remove.
+      const prefab = activePrefab();
+
+      if (!prefab) {
+        // Idle: hovering a placed piece previews it as "click to pick up".
         const hit = raycastPlaced();
         const id = (hit?.userData.placedId as string | undefined) ?? null;
         if (id !== hoveredPlacedId) {
@@ -158,7 +177,7 @@
       const groundHit = raycastGround();
       if (!groundHit) return;
 
-      const piece = getPieceData(selectedPrefab)!;
+      const piece = getPieceData(prefab)!;
       const rot = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), ghostRotationY);
       // Rest the piece's true mesh bottom on the ground. A pure-yaw
       // rotation leaves Y unchanged, so center.y is still a valid vertical
@@ -166,65 +185,162 @@
       const tentativePos = groundHit.clone();
       tentativePos.y = piece.bounds.y / 2 - piece.center.y;
 
-      const snapped = snapPosition(selectedPrefab, tentativePos, rot, placedPieces);
+      // Exclude the piece currently being moved from its own snap targets
+      // — otherwise it'd snap to its own pre-move position.
+      const snapTargets = movingPieceId ? placedPieces.filter((p) => p.id !== movingPieceId) : placedPieces;
+      const snapped = snapPosition(prefab, tentativePos, rot, snapTargets);
 
       pendingPos = snapped;
       pendingRot = rot;
       positionMesh(ghostMesh, piece, snapped, rot);
     }
 
-    function handlePointerDown(event: PointerEvent) {
-      if (event.button !== 0) return; // left click only
-      updatePointerNdc(event);
+    function commitPending() {
+      if (!pendingPos || !pendingRot) return;
+      const prefab = activePrefab();
+      if (!prefab) return;
+      const pos = { x: pendingPos.x, y: pendingPos.y, z: pendingPos.z };
+      const rot = { x: pendingRot.x, y: pendingRot.y, z: pendingRot.z, w: pendingRot.w };
 
-      if (selectedPrefab) {
-        if (!pendingPos || !pendingRot) return;
-        const newPiece: PlacedPiece = {
-          id: crypto.randomUUID(),
-          prefab: selectedPrefab,
-          pos: { x: pendingPos.x, y: pendingPos.y, z: pendingPos.z },
-          rot: { x: pendingRot.x, y: pendingRot.y, z: pendingRot.z, w: pendingRot.w },
-        };
-        placedPieces = [...placedPieces, newPiece];
-        return;
-      }
-
-      const hit = raycastPlaced();
-      const id = hit?.userData.placedId as string | undefined;
-      if (id) {
-        placedPieces = placedPieces.filter((p) => p.id !== id);
-        hoveredPlacedId = null;
+      if (movingPieceId) {
+        const id = movingPieceId;
+        placedPieces = placedPieces.map((p) => (p.id === id ? { ...p, pos, rot } : p));
+        movingPieceId = null;
+      } else if (selectedPrefab) {
+        placedPieces = [...placedPieces, { id: crypto.randomUUID(), prefab: selectedPrefab, pos, rot }];
       }
     }
 
-    function handleKeyDown(event: KeyboardEvent) {
-      if (!selectedPrefab) return;
-      if (event.key.toLowerCase() === 'r') {
-        ghostRotationY += Math.PI / 4;
-      } else if (event.key === 'Escape') {
-        selectedPrefab = null;
+    function deleteAt(): boolean {
+      const hit = raycastPlaced();
+      const id = hit?.userData.placedId as string | undefined;
+      if (!id) return false;
+      placedPieces = placedPieces.filter((p) => p.id !== id);
+      if (movingPieceId === id) movingPieceId = null;
+      if (hoveredPlacedId === id) hoveredPlacedId = null;
+      return true;
+    }
+
+    function cancelActive() {
+      if (selectedPrefab) selectedPrefab = null;
+      if (movingPieceId) {
+        movingPieceId = null;
+        rebuildPlacedPieces(); // the piece being moved reappears
       }
+    }
+
+    function handlePointerDown(event: PointerEvent) {
+      updatePointerNdc(event);
+
+      if (event.button === 1) {
+        // Middle click: delete whatever's under the cursor, regardless of
+        // any in-progress placement/move.
+        event.preventDefault();
+        deleteAt();
+        return;
+      }
+
+      if (event.button === 2) {
+        // Right click: cancel the current placement/move (instead of Esc).
+        cancelActive();
+        return;
+      }
+
+      if (event.button !== 0) return;
+
+      if (activePrefab()) {
+        commitPending();
+        return;
+      }
+
+      // Nothing active: click a placed piece to pick it up for moving.
+      const hit = raycastPlaced();
+      const id = hit?.userData.placedId as string | undefined;
+      if (id) {
+        const piece = placedPieces.find((p) => p.id === id);
+        if (piece) {
+          // Preserve the piece's current facing instead of resetting to 0
+          // — these are always pure-yaw rotations (only R ever produces
+          // one), so extracting the Y euler angle round-trips cleanly.
+          const q = new THREE.Quaternion(piece.rot.x, piece.rot.y, piece.rot.z, piece.rot.w);
+          ghostRotationY = new THREE.Euler().setFromQuaternion(q, 'YXZ').y;
+        }
+        hoveredPlacedId = null;
+        movingPieceId = id;
+        rebuildGhost();
+        rebuildPlacedPieces();
+      }
+    }
+
+    // --- WASD camera panning — active regardless of selection/move state ---
+    const panKeys = new Set<string>();
+    const PAN_SPEED = 10; // world units per second
+
+    function handleKeyDown(event: KeyboardEvent) {
+      const key = event.key.toLowerCase();
+      if (key === 'w' || key === 'a' || key === 's' || key === 'd') {
+        panKeys.add(key);
+        return;
+      }
+      if (key === 'r' && activePrefab()) {
+        ghostRotationY += Math.PI / 4;
+      }
+    }
+
+    function handleKeyUp(event: KeyboardEvent) {
+      panKeys.delete(event.key.toLowerCase());
+    }
+
+    function handleContextMenu(event: MouseEvent) {
+      event.preventDefault(); // right click is "cancel", not the browser menu
     }
 
     canvas.addEventListener('pointermove', handlePointerMove);
     canvas.addEventListener('pointerdown', handlePointerDown);
+    canvas.addEventListener('contextmenu', handleContextMenu);
     window.addEventListener('keydown', handleKeyDown);
+    window.addEventListener('keyup', handleKeyUp);
 
     // Bridge external prop changes (palette selection, undo/redo later)
-    // into this imperative Three.js scene.
+    // into this imperative Three.js scene. Selecting a palette piece
+    // cancels an in-progress move.
     $effect(() => {
       selectedPrefab; // register dependency
+      if (selectedPrefab && movingPieceId) movingPieceId = null;
       ghostRotationY = 0;
       rebuildGhost();
+      rebuildPlacedPieces();
     });
     $effect(() => {
       placedPieces; // register dependency
       rebuildPlacedPieces();
     });
 
+    const clock = new THREE.Clock();
     let frameId: number;
     function animate() {
       frameId = requestAnimationFrame(animate);
+      const dt = clock.getDelta();
+
+      if (panKeys.size > 0) {
+        const forward = new THREE.Vector3();
+        camera.getWorldDirection(forward);
+        forward.y = 0;
+        forward.normalize();
+        const right = new THREE.Vector3().crossVectors(forward, camera.up).normalize();
+
+        const pan = new THREE.Vector3();
+        if (panKeys.has('w')) pan.add(forward);
+        if (panKeys.has('s')) pan.sub(forward);
+        if (panKeys.has('d')) pan.add(right);
+        if (panKeys.has('a')) pan.sub(right);
+        if (pan.lengthSq() > 0) {
+          pan.normalize().multiplyScalar(PAN_SPEED * dt);
+          camera.position.add(pan);
+          controls.target.add(pan);
+        }
+      }
+
       controls.update();
       renderer.render(scene, camera);
     }
@@ -241,8 +357,10 @@
       cancelAnimationFrame(frameId);
       window.removeEventListener('resize', handleResize);
       window.removeEventListener('keydown', handleKeyDown);
+      window.removeEventListener('keyup', handleKeyUp);
       canvas.removeEventListener('pointermove', handlePointerMove);
       canvas.removeEventListener('pointerdown', handlePointerDown);
+      canvas.removeEventListener('contextmenu', handleContextMenu);
       renderer.dispose();
     };
   });
@@ -255,10 +373,12 @@
     <button onclick={() => setPreset('front')}>Front</button>
   </div>
   <div class="hint">
-    {#if selectedPrefab}
-      Click to place · R to rotate · Esc to cancel
+    {#if movingPieceId}
+      Click to drop · R to rotate · Right-click to cancel · WASD to pan
+    {:else if selectedPrefab}
+      Click to place · R to rotate · Right-click to cancel · WASD to pan
     {:else}
-      Select a piece to place it, or click a placed piece to remove it
+      Click a piece to move it · middle-click to delete · WASD to pan
     {/if}
   </div>
   <canvas bind:this={canvas}></canvas>
