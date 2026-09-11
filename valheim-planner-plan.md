@@ -2,9 +2,7 @@
 
 ## Context
 
-Build a browser-based interactive Valheim building simulator, hosted on GitHub Pages, where a user can place buildable pieces (walls, beams, roofs, floors, etc.) to design bases. This document captures **Phase 0** — an asset-availability investigation the user asked for up front — and sketches the implementation only at the level of high-level phases, deliberately leaving details to be fleshed out once Phase 0 conclusions are accepted.
-
-Current repo (`/workspace`) is an unrelated devcontainer project; the webapp is greenfield and would live either in a subdirectory or a separate repo (decision deferred).
+Build a browser-based interactive Valheim building simulator, hosted on GitHub Pages, where a user can place buildable pieces (walls, beams, roofs, floors, etc.) to design bases. This document captures **Phase 0** — an asset-availability investigation the user asked for up front.
 
 ## Project ground rules (committed)
 
@@ -65,7 +63,7 @@ Consequence: the "no free icon pack exists" problem is a non-issue — we don't 
 
 No polished web-based Valheim building planner appears to exist. This is a genuine gap in the fan-tool ecosystem, not a crowded space.
 
-### Key source URLs (for follow-up in Phase 1)
+### Key source URLs (for follow-up during implementation)
 
 - https://valheim.weirdgloop.org/w/Valheim_Wiki:Copyrights
 - https://valheim.fandom.com/wiki/Valheim_Wiki:Copyrights
@@ -79,7 +77,7 @@ No polished web-based Valheim building planner appears to exist. This is a genui
 
 ---
 
-## Pre-spike checklist
+## Pre-spike checklist (historical — gate passed, see result below)
 
 Everything that must be in place before the go/no-go spike is a good use of time. Ordered so each item's failure is caught cheaply.
 
@@ -123,12 +121,12 @@ Existing infrastructure to fork or model on: **JotunnDoc** (https://github.com/V
 
 Legality: numeric spatial data is not copyrightable. Shipping the resulting JSON in the app repo is fine. The plugin itself never redistributes any Iron Gate art or code.
 
-### Fallbacks (rank-ordered) if the preferred approach fails
+### Fallbacks (rank-ordered) if the preferred approach fails (historical — gate passed, see result below)
 
 1. **AssetRipper / AssetStudio on a local install** — dump prefab YAML privately, extract numeric fields into JSON, commit. Legally fine (numbers only, no assets), operationally clunky, and breaks on every game update.
 2. **Manual in-game measurement** — build one of each piece using the 2m grid and character height as reference, hand-encode. Feasible only for a wood-tier MVP subset (~15–20 pieces); weeks of tedium if extended to the full catalog.
 
-### Gate criteria
+### Gate criteria (historical — gate passed, see result below)
 
 Before committing to Phase 1+, produce:
 - A working plugin (or extracted YAML) that emits a machine-readable JSON with, for a representative sample of at least 10 pieces spanning wood/stone/iron families: piece name, bounding-box size, and the list of snap points as (local x, y, z, rotation).
@@ -149,73 +147,125 @@ Findings that corrected the plan's assumptions, for whoever touches the extracto
 
 ---
 
-## High-level implementation phases
+## Rendering (resolved): full 3D via Three.js
 
-Deliberately sketchy — flesh out after Phase 0 conclusions are accepted and the open questions below are resolved.
-
-### Phase 1 — Prototype scope decision (no code yet)
-
-**Rendering (resolved): full 3D via Three.js.** Rationale:
 - Valheim building is inherently 3D — diagonal beams, angled roof pieces (26° / 45°), and vertical support chains flatten poorly in 2D or isometric.
-- Structural integrity (Phase 5) is a 3D problem; building it on a 2D renderer would force a rewrite.
+- Structural integrity, if ever added, is a 3D problem; building it on a 2D renderer would force a rewrite.
 - `.vbuild` piece entries are already x/y/z + rotation, so 3D interop is native.
-- Real cost is placement UX (raycasting, ghost preview, snap highlighting, camera orbit), not rendering throughput. Three.js handles the mesh count comfortably via instancing.
-- **De-risk built in:** ship free-orbit plus a small set of locked camera presets (top-down, front, iso-45°) so users have a simpler nav mode when free orbit is overkill. Cheap addition on top of the 3D pipeline.
+- Real cost is placement UX (raycasting, ghost preview, snap highlighting, camera orbit), not rendering throughput.
+- **De-risk built in:** ship free-orbit plus a small set of locked camera presets (top-down, front, iso-45°) so users have a simpler nav mode when free orbit is overkill.
 
-Resolved (see "Open questions" below): repo is `braidedcable/valheimdraft-webapp`, framework is Svelte, MVP scope is wood-tier only, structural integrity is deferred past MVP.
+## Resolved decisions
 
-Still to nail down with the user:
-- Whether `.vbuild` import/export is in MVP or v2.
-
-### Phase 2 — Build the piece catalog
-Depends on the snap-point / dimension extraction gate above having passed.
-- Run BuildPiecesCustomized `bpcsaveall` in a local Valheim install to dump piece names + material costs.
-- Cross-reference with Jötunn prefab list for coverage.
-- Run the BepInEx dimension/snap-point dump plugin (from the gate spike) to produce spatial data.
-- Merge cost data + spatial data into a single `pieces.json`, the app's source of truth.
-- Commit `pieces.json` (numeric data only, no ripped assets).
-
-### Phase 3 — Core webapp skeleton
-- Static site (Svelte + Vite). No server, deployable to GitHub Pages.
-- **Three.js scene** with procedurally sized meshes per piece, flat material-family colors, and instancing for repeated pieces.
-- Piece palette UI populated from `pieces.json`, scoped to wood-tier pieces for MVP (~15-20 pieces: floor, wall, roof, pole, stairs, door). Non-wood materials mostly reskin the same handful of shapes, so extending the palette later is additive, not a rework.
-- Placement UX: cursor raycast → ghost mesh preview → snap-point highlight → click to commit. Remove and rotate hotkeys. Expect this to be the bulk of Phase 3 effort.
-- Camera: free orbit + locked presets (top-down, front, iso-45°), pan and zoom.
-
-### Phase 4 — Persistence & sharing
-- Save/load to `localStorage`.
-- Export/import as JSON.
-- `.vbuild` export (and import if time permits) — PlanBuild is the reference implementation.
-- Shareable URL (encode state in query string or hash).
-
-### Phase 5 — Polish
-- Materials cost tally (sum from `pieces.json`).
-- Structural integrity indicator (Valheim's beam-support rules; may be v2).
-- Undo/redo.
-- Keyboard shortcuts.
-- Attribution page and "unofficial fan project" disclaimer wired into the UI from day one, not bolted on at the end (per project ground rules).
-- Optional: swap flat material-family colors for CC0 tiling textures. Deferred from v1 per user decision.
-
-### Phase 6 — Ship
-- GitHub Actions workflow to build and deploy to `gh-pages`.
-- README with disclaimer, credits, license notes.
+1. **Repo layout**: new dedicated repo — `braidedcable/valheimdraft-webapp` (separate from the `valheimdraft` extractor repo; both cloned into this devcontainer).
+2. **Framework preference**: Svelte + Vite. Compiles away at build time, minimal runtime, gives reactive state for the palette/cost-tally/undo bookkeeping without hand-rolled DOM diffing, and avoids the extra integration layer (react-three-fiber) React would need for Three.js.
+3. **MVP piece scope**: wood-tier subset first (~15-20 pieces: floor, wall, roof, pole, stairs, door). Materials mostly reskin the same shapes (box/wedge/cylinder) with flat color, so once shape generators exist for wood tier, adding other materials is mostly more `pieces.json` entries, not a rewrite.
+4. **Structural integrity**: deferred past MVP, consistent with wood-tier-first — ship pure placement (place/rotate/remove, no stability simulation) before adding real support-propagation logic.
+5. **`.vbuild` import/export**: export ships in MVP (near-free — same shape as the scene-state format below, one line per piece). Import is v2 — needs prefab-name mapping and error handling that export doesn't.
 
 ---
 
-## Open questions to resolve before Phase 1 — RESOLVED
+## Work tracks
 
-1. **Repo layout**: new dedicated repo — `braidedcable/valheimdraft-webapp` (separate from the `valheimdraft` extractor repo; both cloned into this devcontainer).
-2. **Framework preference**: Svelte + Vite. Rationale: compiles away at build time, minimal runtime, gives reactive state for the palette/cost-tally/undo bookkeeping (Phase 5) without hand-rolled DOM diffing, and avoids the extra integration layer (react-three-fiber) React would need for Three.js.
-3. **MVP piece scope**: wood-tier subset first (~15-20 pieces). Since materials mostly reskin the same shapes (box/wedge/cylinder) with flat color, once shape generators exist for wood tier, adding other materials is mostly more `pieces.json` entries, not a rewrite.
-4. **Structural integrity**: deferred past MVP, consistent with wood-tier-first — ship pure placement (place/rotate/remove, no stability simulation) before adding real support-propagation logic.
+Two tracks, because one of them needs Jared's Windows gaming PC and the
+other needs this devcontainer. Track A sits in a queue for the next time
+Jared's at that machine; Track B proceeds regardless. Within Track B nothing
+is truly parallel — it's a solo project — so the grouping below is "what's
+unblocked right now," not a dependency graph to work simultaneously.
 
-Still open: whether `.vbuild` import/export is in MVP or v2 (see Phase 1 above).
+### Track A — needs Jared's Windows machine
+
+1. **Copy `Documents\ValheimDraft\pieces-dump.json` into this devcontainer**
+   (e.g. commit it to the `valheimdraft` repo). Not a game-launch task, just
+   a file copy — do this first, since it unblocks checking the extractor
+   gaps below against real data before deciding whether item 3 is needed.
+2. **Run `bpcsaveall`** (BuildPiecesCustomized console command) in-game to
+   dump material costs.
+3. **Possibly re-run the extractor** with `center` added to its output —
+   decide after item 1 lands and the gaps below are checked against real
+   data. If needed, batch it into the same game session as item 2 (one trip,
+   not two).
+4. **`.vbuild` round-trip test** — export from the app, import into
+   PlanBuild in-game, verify the layout matches. Not until export exists in
+   Track B.
+
+### Track B — devcontainer, proceeds regardless of Track A
+
+**Blocked on nothing — start anytime:**
+- Vite + Svelte scaffold, with the GitHub Pages base-path set correctly.
+- GitHub Actions workflow to build and deploy to `gh-pages`. Deploy the
+  empty scaffold immediately — a base-path bug is a 5-minute fix against a
+  blank page, and an archaeology session against a finished scene.
+- Attribution page + "unofficial fan project" disclaimer, wired into the
+  header/footer. Static content, zero dependencies on anything else — the
+  ground rules already say "day one," so build it with the first deploy
+  rather than leaving it for later.
+- Pin the ~15-20 MVP wood-tier prefab names (from the public Jötunn prefab
+  list).
+- Hand-author a `prefab → shape primitive + material-family color` mapping
+  for those pieces. This exists in no dump; it's the actual content behind
+  the "procedural geometry, flat material colors" art strategy.
+- A stub `pieces.json` — 3-4 fake wood pieces in the real schema
+  (`{prefab, bounds:{x,y,z}, snapPoints:[{pos:{x,y,z}, rot:{x,y,z,w}}]}`,
+  matching the extractor's output). Everything below builds against this;
+  Track A's real data is a drop-in swap once it lands.
+- Scene-state shape: `{prefab, pos:{x,y,z}, rot:{x,y,z,w}}` — same shape
+  `.vbuild` needs. A ten-minute decision, not a phase.
+
+**Needs the scaffold + stub data:**
+- Three.js scene: procedurally sized meshes per piece, flat material-family
+  colors.
+- Camera: free orbit + locked presets (top-down, front, iso-45°), pan and
+  zoom.
+- Piece palette UI, populated from `pieces.json`.
+- Placement UX: cursor raycast → ghost mesh preview → snap-point highlight
+  → click to commit, plus rotate/remove hotkeys. Expect this to be the bulk
+  of the work — sequence it last within this group.
+
+**Needs the scene-state shape (not placement UX being finished):**
+- Save/load to `localStorage`.
+- Export/import as JSON.
+- `.vbuild` export — near-free given the shared state shape.
+- Undo/redo (state snapshots).
+- Shareable URL (encode state in the hash).
+
+**Needs Track A's cost data:**
+- Materials cost tally (merge costs into `pieces.json`, sum on the fly).
+
+**Explicitly deferred past MVP:**
+- Structural integrity simulation (Valheim's beam-support rules).
+- Swapping flat material colors for CC0 tiling textures.
+- `.vbuild` import.
+- Mesh instancing — plain meshes are fine at a wood-tier piece count, and
+  instancing complicates per-piece raycast/select/remove. Add it if
+  framerate actually becomes a problem.
+
+### Known extractor gaps
+
+Found by reading `valheimdraft/Plugin.cs`; both need Track A item 1's JSON
+in hand to confirm against real data.
+
+- **Bounds `center` isn't emitted** — `Plugin.cs:67` stores only
+  `bounds.size`. If a piece's mesh isn't centered on its prefab origin,
+  procedural geometry will sit offset from its own snap points. Cheap
+  workaround: assume `center = (0, size.y/2, 0)`. Real fix: add `center` to
+  `PieceData` (Track A item 3).
+- **Snap points use raw `t.localPosition`** (`Plugin.cs:61`) — relative to
+  each transform's *parent*, not composed through the hierarchy to root
+  space the way `GetBounds` does. Wrong for any snap point nested deeper
+  than a direct child of the root. `wood_floor`'s spot-check passing
+  suggests root-level children are the norm, but it's unverified across all
+  664 pieces.
+- Lower-confidence: the snap-point query also matches inactive children, so
+  pieces with `New`/`Worn`/`Broken` wear-state subtrees might emit
+  duplicate snap points. Fixable by deduping in the webapp's loader — no
+  extractor rebuild needed either way.
 
 ---
 
 ## Verification (once implementation begins)
 
-- Local: `npm run dev` (or equivalent) — place, rotate, remove pieces; save/load round-trips.
-- `.vbuild` round-trip: export from the app, import into PlanBuild in-game, verify layout matches.
-- Deploy preview via GitHub Pages branch on a PR, click through the same flows.
+- Local: `npm run dev` — place, rotate, remove pieces; save/load round-trips.
+- `.vbuild` round-trip: export from the app, import into PlanBuild in-game, verify layout matches (Track A item 4).
+- Deploy `main` to `gh-pages` and click through the same flows on the live site (GitHub Pages project sites don't do native per-PR previews — verification happens against the deployed site, not a PR preview).
 - License audit before first deploy: confirm no wiki images or ripped assets are in the repo; confirm attribution page is present and disclaimer is visible in the deployed UI.
