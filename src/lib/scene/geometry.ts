@@ -162,29 +162,26 @@ function thickTriangle(p1: THREE.Vector3, p2: THREE.Vector3, p3: THREE.Vector3, 
 }
 
 /**
- * A hip corner (style='hip') rises from two low eave edges up to one high
- * corner via a diagonal fold; a valley corner (style='valley') is the
- * mirror — one low corner (the interior valley bottom), the rest of the
- * perimeter high. Two thin triangular panels sharing the diagonal fold
- * line, not a single flat rectangular panel like the plain roof piece —
- * per direct feedback, corner pieces are visibly folded in-game, not
- * square.
+ * A hip corner (style='hip') rises from three low grid corners up to one
+ * high corner via a diagonal fold; a valley corner (style='valley') is the
+ * mirror — one low corner, three high. Two thin triangular panels sharing
+ * the diagonal fold line, not a single flat rectangular panel like the
+ * plain roof piece — per direct feedback, corner pieces are visibly
+ * folded in-game, not square.
+ *
+ * Which corner is the odd one out is grounded in the piece's REAL
+ * snap-point data (checked directly, not a guessed convention):
+ * wood_roof_ocorner's snap points put exactly one of its four grid
+ * corners at y=1 (the rest at y=0); wood_roof_icorner is the mirror. An
+ * earlier version guessed the wrong diagonal corner as the peak, which is
+ * the likely cause of a "scooted inward" report — the visual mesh's fold
+ * was on the opposite corner from where the real connecting snap points
+ * actually are.
  *
  * Slope matching with the adjacent straight roof panel (also direct
- * feedback: compatible angles need to meet correctly at the seam) — each
- * triangle's "connecting" edge (B–C rising over the z/depth axis, D–C
- * rising over the x/width axis) derives its rise from this SAME piece's
- * own real extracted bounds, exactly like the straight panel's own
- * atan2(bounds.y, bounds.z) — not an independently invented angle. Since
- * both MVP corner pieces' bounds are very nearly square (e.g. ocorner:
- * x=2.756, z=2.787), the x-axis and z-axis edges end up at closely
- * matching pitch either way. What ISN'T verified: whether these are
- * actually the right two edges to be "the ones that connect" — the exact
- * eave-vs-hip-line topology is a reasonable general hip/valley-roof
- * convention, not confirmed against Valheim's real corner mesh (the wiki
- * page offered as a reference returned 403, couldn't be fetched) or any
- * image. Testable now that placement exists: place a plain roof next to a
- * corner piece and check the slopes visually continue without a kink.
+ * feedback) — each triangle's rising edge derives its height from this
+ * SAME piece's own real extracted bounds, same grounding as the straight
+ * panel's atan2(bounds.y, bounds.z), not an invented angle.
  *
  * NOT visually verified — this environment has no browser.
  */
@@ -207,7 +204,15 @@ function roofCornerGeometry(
   const low = -height / 2;
   const high = height / 2;
 
-  const heights = style === 'hip' ? { A: low, B: low, C: high, D: low } : { A: low, B: high, C: high, D: high };
+  // Which corner is the odd one out, and which diagonal it sits on, comes
+  // from wood_roof_ocorner/icorner's REAL snap-point data (checked
+  // directly, not guessed): ocorner has 3 grid corners at y=0 and exactly
+  // one — (x=-1, z=-1), i.e. corner A in this labeling — at y=1. icorner
+  // is the mirror: 3 corners high, one — (x=1, z=1), corner C — low. An
+  // earlier version put the "hip" peak at C instead of A (the wrong
+  // diagonal corner), which was likely the actual cause of pieces reading
+  // as shifted inward relative to adjacent straight panels.
+  const heights = style === 'hip' ? { A: high, B: low, C: low, D: low } : { A: high, B: high, C: low, D: high };
 
   const A = new THREE.Vector3(-w, heights.A, -d);
   const B = new THREE.Vector3(w, heights.B, -d);
