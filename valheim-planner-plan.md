@@ -295,21 +295,54 @@ this batch — worth remembering whenever the catalog grows past wood tier:
    the catalog grows, worth revisiting the extractor's bounds capture for
    those specifically rather than working around it per-piece in the
    webapp.
+3. **When a shape's exact topology matters (which corner is high, which
+   edge connects to what), ground it in the piece's own real snap-point
+   data, not a guessed general convention.** `wood_roof_ocorner`/`icorner`
+   needed a folded hip/valley shape (confirmed by eye — corner roof pieces
+   are visibly folded in-game, not a flat panel like the plain roof piece),
+   built as two thin triangles sharing a diagonal fold. First attempt
+   guessed which diagonal corner was the peak from general hip-roof
+   convention — wrong diagonal, and the piece read as "scooted inward"
+   relative to adjacent straight panels. Checking the piece's actual
+   snap-point data directly (exactly one of its four grid corners at y=1,
+   not the one guessed) fixed it. A separate, unrelated bug compounded
+   this: the hand-built corner geometry spanned `[0, height]` instead of
+   being centered on local origin like every other shape (`±bounds.y/2`),
+   which is the convention piece positioning relies on — fixed by
+   centering it to match. Marked "good enough for now" by the user, with
+   a known remaining nitpick (lower edges not perfectly coplanar with the
+   straight roof piece's lower edge) deferred rather than chased further.
 
 **Done and verified in-browser:**
 - Placement UX: click a palette piece to select it, ghost preview follows
-  the cursor (ground raycast), click to commit. Snapping
+  the cursor (ground raycast), left-click to commit. Snapping
   (`src/lib/scene/snapping.ts`) finds the closest pair between the ghost's
   own snap points and any placed piece's, and if within 1m shifts the ghost
-  so that pair coincides exactly (edge-to-edge). `R` rotates the ghost 45°
-  at a time; `Esc` cancels. With nothing selected, hovering a placed piece
-  highlights it red and clicking removes it. Palette selection and placed
-  pieces are owned by `App.svelte` and bound down through `Viewport`/
-  `PiecePalette`, so state survives toggling the attribution panel.
-  **User-verified** — this was the biggest remaining unknown (raycasting,
-  pointer events, and the Svelte-reactivity-into-imperative-Three.js
-  bridge via `$effect` inside `onMount` all untestable in this
-  environment) and it works.
+  so that pair coincides exactly (edge-to-edge). Palette selection and
+  placed pieces are owned by `App.svelte` and bound down through
+  `Viewport`/`PiecePalette`, so state survives toggling the attribution
+  panel. **User-verified** — this was the biggest remaining unknown
+  (raycasting, pointer events, the Svelte-reactivity-into-imperative-
+  Three.js bridge via `$effect` inside `onMount`) and it works.
+  Controls, revised after hands-on feedback (original Esc-to-cancel /
+  click-placed-piece-to-remove scheme replaced entirely):
+  - **WASD** pans the camera, relative to current facing, smooth while
+    held (clock-based delta). Works regardless of selection/move state —
+    originally all keyboard handling was gated behind an active selection.
+  - **R** rotates the ghost 45° at a time (only while placing/moving).
+  - **Right-click** cancels the current placement or move (replaced Esc);
+    the browser's context menu is suppressed on the canvas.
+  - **Middle-click** deletes whatever placed piece is under the cursor,
+    independent of any other state.
+  - **Left-click** on an existing placed piece (with nothing else active)
+    picks it up to relocate — ghost follows the cursor with the same
+    snapping logic, preserving the piece's current rotation, click again
+    to drop. Selecting a palette piece mid-move cancels the move.
+  - Shipped with a real bug from this rework, since fixed: picking up a
+    piece hid it immediately but left the ghost unpositioned until the
+    next mouse-move, so a click without moving the mouse made the piece
+    vanish with nothing visible in its place — reported as "still
+    deletes," actually a missing initial ghost placement.
 
 **Needs the scene-state shape (not placement UX being finished):**
 - Save/load to `localStorage`.
