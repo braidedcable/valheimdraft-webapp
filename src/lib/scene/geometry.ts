@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 
-export type PieceShape = 'box' | 'cylinder' | 'wedge' | 'stairs' | 'ladder' | 'fence';
+export type PieceShape = 'box' | 'cylinder' | 'wedge' | 'stairs' | 'ladder' | 'fence' | 'hip' | 'valley';
 
 /**
  * A thin box tilted to the piece's slope angle — not a solid triangular
@@ -127,6 +127,93 @@ function fenceGeometry(width: number, height: number, depth: number): THREE.Buff
   return mergeGeometries(parts, false);
 }
 
+/**
+ * A thin volumetric triangle (top + bottom faces at ±thickness/2 along the
+ * triangle's own normal, plus 3 side quads) — the building block for the
+ * folded roof-corner shape below, since Three.js has no non-rectangular
+ * "thin panel" primitive. Material is set DoubleSide when using this (see
+ * roofCornerGeometry) as a safety net: face winding here is a best-effort
+ * guess, unverified in a browser, and DoubleSide makes a winding mistake
+ * merely non-realistic (visible from the "wrong" side too) instead of
+ * invisible (backface-culled — the much worse failure mode).
+ */
+function thickTriangle(p1: THREE.Vector3, p2: THREE.Vector3, p3: THREE.Vector3, thickness: number): THREE.BufferGeometry {
+  const normal = new THREE.Vector3().subVectors(p2, p1).cross(new THREE.Vector3().subVectors(p3, p1)).normalize();
+  const offset = normal.clone().multiplyScalar(thickness / 2);
+  const top = [p1.clone().add(offset), p2.clone().add(offset), p3.clone().add(offset)];
+  const bottom = [p1.clone().sub(offset), p2.clone().sub(offset), p3.clone().sub(offset)];
+
+  const positions: number[] = [];
+  const pushTri = (a: THREE.Vector3, b: THREE.Vector3, c: THREE.Vector3) =>
+    positions.push(a.x, a.y, a.z, b.x, b.y, b.z, c.x, c.y, c.z);
+
+  pushTri(top[0], top[1], top[2]);
+  pushTri(bottom[2], bottom[1], bottom[0]);
+  for (let i = 0; i < 3; i++) {
+    const j = (i + 1) % 3;
+    pushTri(top[i], bottom[i], bottom[j]);
+    pushTri(top[i], bottom[j], top[j]);
+  }
+
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+  geometry.computeVertexNormals();
+  return geometry;
+}
+
+/**
+ * A hip corner (style='hip') rises from two low eave edges up to one high
+ * corner via a diagonal fold; a valley corner (style='valley') is the
+ * mirror — one low corner (the interior valley bottom), the rest of the
+ * perimeter high. Two thin triangular panels sharing the diagonal fold
+ * line, not a single flat rectangular panel like the plain roof piece —
+ * per direct feedback, corner pieces are visibly folded in-game, not
+ * square.
+ *
+ * Slope matching with the adjacent straight roof panel (also direct
+ * feedback: compatible angles need to meet correctly at the seam) — each
+ * triangle's "connecting" edge (B–C rising over the z/depth axis, D–C
+ * rising over the x/width axis) derives its rise from this SAME piece's
+ * own real extracted bounds, exactly like the straight panel's own
+ * atan2(bounds.y, bounds.z) — not an independently invented angle. Since
+ * both MVP corner pieces' bounds are very nearly square (e.g. ocorner:
+ * x=2.756, z=2.787), the x-axis and z-axis edges end up at closely
+ * matching pitch either way. What ISN'T verified: whether these are
+ * actually the right two edges to be "the ones that connect" — the exact
+ * eave-vs-hip-line topology is a reasonable general hip/valley-roof
+ * convention, not confirmed against Valheim's real corner mesh (the wiki
+ * page offered as a reference returned 403, couldn't be fetched) or any
+ * image. Testable now that placement exists: place a plain roof next to a
+ * corner piece and check the slopes visually continue without a kink.
+ *
+ * NOT visually verified — this environment has no browser.
+ */
+function roofCornerGeometry(
+  width: number,
+  height: number,
+  depth: number,
+  style: 'hip' | 'valley'
+): THREE.BufferGeometry {
+  const thickness = 0.08;
+  const w = width / 2;
+  const d = depth / 2;
+
+  const heights =
+    style === 'hip' ? { A: 0, B: 0, C: height, D: 0 } : { A: 0, B: height, C: height, D: height };
+
+  const A = new THREE.Vector3(-w, heights.A, -d);
+  const B = new THREE.Vector3(w, heights.B, -d);
+  const C = new THREE.Vector3(w, heights.C, d);
+  const D = new THREE.Vector3(-w, heights.D, d);
+
+  return mergeGeometries([thickTriangle(A, B, C, thickness), thickTriangle(A, C, D, thickness)], false);
+}
+
+// Shapes whose face winding is a best-effort, unverified guess (see
+// thickTriangle above) — callers should render these DoubleSide so a
+// winding mistake is merely non-realistic instead of invisible.
+export const DOUBLE_SIDED_SHAPES: ReadonlySet<PieceShape> = new Set(['hip', 'valley']);
+
 export function geometryForPiece(shape: PieceShape, bounds: { x: number; y: number; z: number }): THREE.BufferGeometry {
   switch (shape) {
     case 'cylinder': {
@@ -141,6 +228,10 @@ export function geometryForPiece(shape: PieceShape, bounds: { x: number; y: numb
       return ladderGeometry(bounds.x, bounds.y, bounds.z);
     case 'fence':
       return fenceGeometry(bounds.x, bounds.y, bounds.z);
+    case 'hip':
+      return roofCornerGeometry(bounds.x, bounds.y, bounds.z, 'hip');
+    case 'valley':
+      return roofCornerGeometry(bounds.x, bounds.y, bounds.z, 'valley');
     case 'box':
     default:
       return new THREE.BoxGeometry(bounds.x, bounds.y, bounds.z);

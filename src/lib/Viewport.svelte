@@ -2,7 +2,7 @@
   import { onMount } from 'svelte';
   import * as THREE from 'three';
   import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
-  import { geometryForPiece, type PieceShape } from './scene/geometry';
+  import { geometryForPiece, DOUBLE_SIDED_SHAPES, type PieceShape } from './scene/geometry';
   import { colorForFamily } from './scene/materials';
   import { getPieceData, snapPosition, type PieceEntry } from './scene/snapping';
   import type { PlacedPiece } from './types';
@@ -56,11 +56,13 @@
     scene.add(ground);
 
     function buildMesh(piece: PieceEntry, color: number, opacity = 1): THREE.Mesh {
-      const geometry = geometryForPiece(piece.shape as PieceShape, piece.bounds);
+      const shape = piece.shape as PieceShape;
+      const geometry = geometryForPiece(shape, piece.bounds);
       const material = new THREE.MeshStandardMaterial({
         color,
         transparent: opacity < 1,
         opacity,
+        side: DOUBLE_SIDED_SHAPES.has(shape) ? THREE.DoubleSide : THREE.FrontSide,
       });
       return new THREE.Mesh(geometry, material);
     }

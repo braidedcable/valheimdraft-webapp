@@ -824,7 +824,7 @@
     {
       "prefab": "wood_roof_icorner",
       "label": "Wood Roof Inner Corner",
-      "shape": "wedge",
+      "shape": "valley",
       "materialFamily": "wood",
       "bounds": {
         "x": 2.689098,
@@ -901,7 +901,7 @@
     {
       "prefab": "wood_roof_ocorner",
       "label": "Wood Roof Outer Corner",
-      "shape": "wedge",
+      "shape": "hip",
       "materialFamily": "wood",
       "bounds": {
         "x": 2.755872,
