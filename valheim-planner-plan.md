@@ -176,21 +176,21 @@ unblocked right now," not a dependency graph to work simultaneously.
 ### Track A — needs Jared's Windows machine
 
 1. ~~Copy `Documents\ValheimDraft\pieces-dump.json` into this devcontainer~~
-   **Done** — committed to the `valheimdraft` repo. Checked against the
-   known extractor gaps below (see that section for what was confirmed).
-2. **Run `bpcsaveall`** (BuildPiecesCustomized console command) in-game to
-   dump material costs.
-3. **Re-run the extractor** — confirmed needed, not just "possibly": the
-   bounds-`center` gap can't be resolved without a code change + rebuild
-   (nothing to check until it's in the output). While rebuilding, also fix
-   the snap-point local-to-root composition (`Plugin.cs:61`) in the same
-   pass — same file, same rebuild/launch cycle either way, so there's no
-   reason to risk a second trip if that one turns out to matter. The
-   duplicate-snap-point gap does *not* need this — it's fixed in the
-   webapp's loader instead. Batch this with item 2 (one game session).
+   **Done** — committed to the `valheimdraft` repo.
+2. ~~Run `bpcsaveall`~~ **Done** — output committed under
+   `valheimdraft/shudnal.BuildPiecesCustomized/` as one JSON file per piece,
+   filename keyed by prefab name (e.g. `wood_floor.json`), which lines up
+   directly with the dump's `prefab` field — no name-mapping needed for the
+   Phase-B merge. 422 of 429 files match a dump prefab; coverage for the
+   wood tier specifically is complete (every `wood_*` building piece has a
+   cost file).
+3. ~~Re-run the extractor~~ **Done** — `center` is now emitted and verified
+   against `wood_floor` (near-zero, as expected for a symmetric piece), and
+   the snap-point local-to-root composition fix is in. See "Known extractor
+   gaps" below for what's now resolved vs. still open.
 4. **`.vbuild` round-trip test** — export from the app, import into
    PlanBuild in-game, verify the layout matches. Not until export exists in
-   Track B.
+   Track B. **Last remaining Track A item.**
 
 ### Track B — devcontainer, proceeds regardless of Track A
 
@@ -245,29 +245,22 @@ unblocked right now," not a dependency graph to work simultaneously.
 
 ### Known extractor gaps
 
-`pieces-dump.json` landed (Track A item 1, done) and got checked against
-these:
-
-- **Confirmed: duplicate snap points.** `ashwood_stair` has two exact
-  duplicates — `(0,1,-1)` and `(0,0,1)`, identical position *and* rotation
-  each. Matches the wear-state-subtree theory (`Plugin.cs:59` matches
-  inactive children too). **Fix in the webapp's loader** (dedupe identical
-  `pos`+`rot` pairs on load) — no extractor rebuild needed, confirmed cheap.
-- **Bounds `center` still isn't emitted** — `Plugin.cs:67` stores only
-  `bounds.size`, and this can't be checked from existing data (there's
-  nothing to inspect until it's added to the output). If a piece's mesh
-  isn't centered on its prefab origin, procedural geometry will sit offset
-  from its own snap points. Cheap workaround: assume
-  `center = (0, size.y/2, 0)`. Real fix: add `center` to `PieceData` (Track
-  A item 3, needs a rebuild + game launch).
-- **Snap points use raw `t.localPosition`** (`Plugin.cs:61`) — relative to
-  each transform's *parent*, not composed through the hierarchy to root
-  space the way `GetBounds` does. Wrong for any snap point nested deeper
-  than a direct child of the root. `wood_floor`'s spot-check passing
-  suggests root-level children are the norm, still unconfirmed either way
-  for the rest — no easy way to check this from the dump alone since a
-  wrong value looks just as plausible as a right one without in-game
-  ground truth.
+- **Duplicate snap points — confirmed, not yet fixed.** `ashwood_stair` has
+  two exact duplicates — `(0,1,-1)` and `(0,0,1)`, identical position *and*
+  rotation each. Matches the wear-state-subtree theory (the snap-point query
+  matches inactive children too). **Fix belongs in the webapp's loader**
+  (dedupe identical `pos`+`rot` pairs on load), not the extractor — still
+  outstanding, pick it up whenever the piece-loading code gets written
+  (Track B).
+- **Bounds `center` — fixed and verified.** `PieceData` now carries `center`
+  (`bounds.center`) alongside `size`; re-ran the extractor and confirmed
+  against `wood_floor` (comes back near-zero, as expected for a symmetric
+  piece).
+- **Snap-point local-to-root composition — fixed.** Position/rotation are
+  now composed through the transform hierarchy into the prefab root's local
+  space (same approach `GetBounds` already used for mesh corners), instead
+  of raw `t.localPosition`/`t.localRotation` relative to each transform's
+  immediate parent. `wood_floor` still checks out correctly post-fix.
 
 Also from inspecting the dump: **410 of 664 pieces have zero snap points**
 — sampling them shows this is expected, not a bug (food, furniture, material
