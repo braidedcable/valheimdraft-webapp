@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onMount } from 'svelte';
+  import { onMount, untrack } from 'svelte';
   import * as THREE from 'three';
   import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
   import { geometryForPiece, DOUBLE_SIDED_SHAPES, type PieceShape } from './scene/geometry';
@@ -257,18 +257,33 @@
       const hit = raycastPlaced();
       const id = hit?.userData.placedId as string | undefined;
       if (id) {
-        const piece = placedPieces.find((p) => p.id === id);
-        if (piece) {
+        const placed = placedPieces.find((p) => p.id === id);
+        if (placed) {
+          const q = new THREE.Quaternion(placed.rot.x, placed.rot.y, placed.rot.z, placed.rot.w);
           // Preserve the piece's current facing instead of resetting to 0
           // — these are always pure-yaw rotations (only R ever produces
           // one), so extracting the Y euler angle round-trips cleanly.
-          const q = new THREE.Quaternion(piece.rot.x, piece.rot.y, piece.rot.z, piece.rot.w);
           ghostRotationY = new THREE.Euler().setFromQuaternion(q, 'YXZ').y;
+
+          hoveredPlacedId = null;
+          movingPieceId = id;
+          rebuildGhost();
+          rebuildPlacedPieces();
+
+          // rebuildGhost() creates the mesh but leaves it at the origin
+          // until the next pointermove repositions it — without this, the
+          // piece vanishes (hidden from the placed group above) with no
+          // visible ghost in its place until the mouse moves, which reads
+          // as a delete. Seed the ghost at the piece's own current
+          // position/rotation immediately instead.
+          if (ghostMesh) {
+            const pieceData = getPieceData(placed.prefab)!;
+            const pos = new THREE.Vector3(placed.pos.x, placed.pos.y, placed.pos.z);
+            positionMesh(ghostMesh, pieceData, pos, q);
+            pendingPos = pos;
+            pendingRot = q;
+          }
         }
-        hoveredPlacedId = null;
-        movingPieceId = id;
-        rebuildGhost();
-        rebuildPlacedPieces();
       }
     }
 
@@ -305,8 +320,11 @@
     // into this imperative Three.js scene. Selecting a palette piece
     // cancels an in-progress move.
     $effect(() => {
-      selectedPrefab; // register dependency
-      if (selectedPrefab && movingPieceId) movingPieceId = null;
+      selectedPrefab; // register dependency — movingPieceId read via
+      // untrack() below so this effect doesn't ALSO re-fire whenever
+      // movingPieceId changes elsewhere (e.g. right after pickup, which
+      // was clobbering the just-seeded ghost rotation back to 0).
+      if (selectedPrefab && untrack(() => movingPieceId)) movingPieceId = null;
       ghostRotationY = 0;
       rebuildGhost();
       rebuildPlacedPieces();
