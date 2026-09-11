@@ -3,30 +3,25 @@ import * as THREE from 'three';
 export type PieceShape = 'box' | 'cylinder' | 'wedge';
 
 /**
- * Builds a right-triangular-prism "ramp" geometry via ExtrudeGeometry
- * (native Three.js, no hand-rolled vertex/index buffers): a triangle profile
- * — flat at one end, rising to full height at the other — extruded across
- * the width. Approximates roof/stair pieces; not a faithful reproduction of
- * their real (stepped/angled) geometry, per the art strategy's "flat
- * procedural shapes, no per-piece hand art" call.
+ * A thin box tilted to the piece's slope angle — not a solid triangular
+ * wedge. Real Valheim roof/stair pieces are just an angled surface, not a
+ * filled-in ramp; a solid prism reads as a thick block, visibly wrong
+ * (confirmed by eye against the real game). The panel's length is the
+ * bounds' y/z diagonal (hypotenuse of the rise and run), tilted by
+ * atan2(rise, run) around X so it spans that diagonal; thickness is a small
+ * fixed constant, not derived from data (there's nothing in the dump to
+ * derive a "surface thickness" from).
  *
- * NOT visually verified — this environment has no browser. Check orientation
- * (which way the ramp rises, whether faces are visible/not backface-culled)
- * against `npm run dev` before trusting it for placement.
+ * NOT visually verified for direction/sign — this environment has no
+ * browser. Which way it tilts (matching the piece's actual high/low edge)
+ * needs a look via `npm run dev`; flipping the rotation sign is a one-line
+ * fix if it's backwards.
  */
-function wedgeGeometry(width: number, height: number, depth: number): THREE.BufferGeometry {
-  const shape = new THREE.Shape();
-  shape.moveTo(-depth / 2, 0);
-  shape.lineTo(depth / 2, 0);
-  shape.lineTo(depth / 2, height);
-  shape.closePath();
-
-  const geometry = new THREE.ExtrudeGeometry(shape, { depth: width, bevelEnabled: false, curveSegments: 1 });
-  // ExtrudeGeometry extrudes the XY profile along +Z; rotate so the profile
-  // sits in the ZY plane and extrusion runs along X (width), then recenter
-  // (extrude starts at the origin, not centered).
-  geometry.rotateY(Math.PI / 2);
-  geometry.translate(-width / 2, 0, 0);
+function slopedPanelGeometry(width: number, rise: number, run: number): THREE.BufferGeometry {
+  const thickness = 0.08;
+  const length = Math.hypot(rise, run);
+  const geometry = new THREE.BoxGeometry(width, thickness, length);
+  geometry.rotateX(Math.atan2(rise, run));
   return geometry;
 }
 
@@ -37,7 +32,7 @@ export function geometryForPiece(shape: PieceShape, bounds: { x: number; y: numb
       return new THREE.CylinderGeometry(radius, radius, bounds.y, 12);
     }
     case 'wedge':
-      return wedgeGeometry(bounds.x, bounds.y, bounds.z);
+      return slopedPanelGeometry(bounds.x, bounds.y, bounds.z);
     case 'box':
     default:
       return new THREE.BoxGeometry(bounds.x, bounds.y, bounds.z);
