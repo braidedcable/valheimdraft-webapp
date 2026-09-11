@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 
-export type PieceShape = 'box' | 'cylinder' | 'wedge' | 'stairs' | 'ladder';
+export type PieceShape = 'box' | 'cylinder' | 'wedge' | 'stairs' | 'ladder' | 'frame';
 
 /**
  * A thin box tilted to the piece's slope angle — not a solid triangular
@@ -94,6 +94,45 @@ function ladderGeometry(width: number, rise: number, run: number): THREE.BufferG
   return geometry;
 }
 
+/**
+ * An outer frame (4 posts/rails) plus horizontal crossbar slats, merged —
+ * a solid box reads as a wall regardless of its proportions; a gate needs
+ * to look open (visible gaps), not filled in. No rotation (unlike the
+ * roof/ladder, a gate hangs vertically, doesn't slope). CROSSBAR_COUNT (2)
+ * is a fixed "looks like a gate" guess, not derived from data.
+ *
+ * NOT visually verified — this environment has no browser.
+ */
+const CROSSBAR_COUNT = 2;
+
+function frameGeometry(width: number, height: number, depth: number): THREE.BufferGeometry {
+  const railThickness = 0.06;
+  const parts: THREE.BufferGeometry[] = [];
+
+  // Vertical posts (left, right).
+  for (const side of [-1, 1]) {
+    const post = new THREE.BoxGeometry(railThickness, height, depth);
+    post.translate(side * (width / 2 - railThickness / 2), 0, 0);
+    parts.push(post);
+  }
+  // Horizontal top/bottom rails.
+  for (const side of [-1, 1]) {
+    const rail = new THREE.BoxGeometry(width, railThickness, depth);
+    rail.translate(0, side * (height / 2 - railThickness / 2), 0);
+    parts.push(rail);
+  }
+  // Crossbar slats, evenly spaced between the rails.
+  const slatWidth = width - railThickness * 2;
+  for (let i = 1; i <= CROSSBAR_COUNT; i++) {
+    const y = -height / 2 + (i / (CROSSBAR_COUNT + 1)) * height;
+    const slat = new THREE.BoxGeometry(slatWidth, railThickness, depth);
+    slat.translate(0, y, 0);
+    parts.push(slat);
+  }
+
+  return mergeGeometries(parts, false);
+}
+
 export function geometryForPiece(shape: PieceShape, bounds: { x: number; y: number; z: number }): THREE.BufferGeometry {
   switch (shape) {
     case 'cylinder': {
@@ -106,6 +145,8 @@ export function geometryForPiece(shape: PieceShape, bounds: { x: number; y: numb
       return stairsGeometry(bounds.x, bounds.y, bounds.z);
     case 'ladder':
       return ladderGeometry(bounds.x, bounds.y, bounds.z);
+    case 'frame':
+      return frameGeometry(bounds.x, bounds.y, bounds.z);
     case 'box':
     default:
       return new THREE.BoxGeometry(bounds.x, bounds.y, bounds.z);
