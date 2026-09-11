@@ -260,13 +260,15 @@ unblocked right now," not a dependency graph to work simultaneously.
   (given their own `stairs` shape — zigzag profile extruded across width);
   the ladder is an open rail+rung frame, not a solid surface either (given
   its own `ladder` shape — two rails + evenly spaced rungs, merged). The
-  gate was first given a `frame` shape (open frame + crossbars, same idea
+  gate was first given an open frame + horizontal-crossbar shape (same idea
   as the ladder) since a solid box read as indistinguishable from a wall —
   but on closer inspection its *bounds* turned out wrong (see below), so it
-  went back to `box`. `wood_fence` got the `frame` treatment gate was
-  wrongly given, since fence's bounds are a proper wide panel.  `cylinder`
-  (poles) needed no changes. Final shape set: `box`, `cylinder`, `wedge`
-  (roofs), `stairs`, `ladder`, `frame` (fence).
+  went back to `box`. `wood_fence` got that horizontal-crossbar treatment
+  next (fence's bounds are a proper wide panel, unlike gate's), but that
+  read as a bookshelf, not a fence — switched to vertical slats between two
+  rails (a picket-fence silhouette) instead, renamed shape `fence`.
+  `cylinder` (poles) needed no changes. Final shape set: `box`, `cylinder`,
+  `wedge` (roofs), `stairs`, `ladder`, `fence`.
 
 ### Shape mapping is an ongoing task, not a one-time list
 
