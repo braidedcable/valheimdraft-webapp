@@ -251,11 +251,18 @@ unblocked right now," not a dependency graph to work simultaneously.
   an end-to-end sanity check of the art strategy — **not real placement UX**.
 - Piece palette UI (`src/lib/PiecePalette.svelte`) — read-only list of
   names + costs for now; click-to-select/place is placement UX, not built.
-- Build and `svelte-check` both pass clean. **Not visually verified** — no
-  browser in this environment. The `wedge` geometry (`geometry.ts`) is the
-  one piece of hand-written geometry logic (vs. native `BoxGeometry`/
-  `CylinderGeometry`) and needs a look via `npm run dev` — orientation and
-  face visibility aren't guaranteed right without eyes on it.
+- Build and `svelte-check` both pass clean. **Visually verified against the
+  deployed site** (this environment has no browser, so this had to happen
+  on the live GitHub Pages deploy rather than `npm run dev` locally).
+  Deployed 4 times over the course of getting it right: `wedge` originally
+  meant a solid triangular-prism ramp, which was wrong for every non-box
+  shape it was applied to — roofs are a thin sloped panel, not a filled
+  block (fixed, confirmed correct); stairs are visibly stepped, not flat
+  (given their own `stairs` shape — zigzag profile extruded across width);
+  the ladder is an open rail+rung frame, not a solid surface either (given
+  its own `ladder` shape — two rails + evenly spaced rungs, merged). All
+  three now confirmed correct by eye. `cylinder` (poles) and `box`
+  (everything else) needed no changes.
 
 **Still needed — the bulk of the remaining work:**
 - Placement UX: cursor raycast → ghost mesh preview → snap-point highlight
