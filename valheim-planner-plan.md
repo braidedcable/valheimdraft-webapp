@@ -191,9 +191,10 @@ unblocked right now," not a dependency graph to work simultaneously.
 4. **`.vbuild` round-trip test** — export from the app, import into
    PlanBuild in-game, verify the layout matches. Not until export exists in
    Track B.
-5. **Automate `bpcsaveall` + colocate its output** — a devcontainer code
-   change (not just an in-game step), verified on the next trip to the
-   gaming PC:
+5. **Automate `bpcsaveall` + colocate its output** — code written, **not
+   yet verified in-game** (next gaming-PC trip: pull, rebuild, redeploy,
+   load a world, check `Documents/ValheimDraft/shudnal.BuildPiecesCustomized/`
+   populates and the log shows a `copied N bpcsaveall files` line):
    - `bpcsaveall` is a standard `Terminal.ConsoleCommand` (from
      `shudnal.BuildPiecesCustomized`, confirmed via its source). ValheimDraft
      can trigger it itself with `Terminal.instance.TryRunCommand("bpcsaveall")`
