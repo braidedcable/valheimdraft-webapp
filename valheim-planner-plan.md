@@ -190,7 +190,25 @@ unblocked right now," not a dependency graph to work simultaneously.
    gaps" below for what's now resolved vs. still open.
 4. **`.vbuild` round-trip test** — export from the app, import into
    PlanBuild in-game, verify the layout matches. Not until export exists in
-   Track B. **Last remaining Track A item.**
+   Track B.
+5. **Automate `bpcsaveall` + colocate its output** — a devcontainer code
+   change (not just an in-game step), verified on the next trip to the
+   gaming PC:
+   - `bpcsaveall` is a standard `Terminal.ConsoleCommand` (from
+     `shudnal.BuildPiecesCustomized`, confirmed via its source). ValheimDraft
+     can trigger it itself with `Terminal.instance.TryRunCommand("bpcsaveall")`
+     once the console exists — same kind of readiness check `Update()`
+     already does for `ZNetScene.instance`. Soft dependency: check the mod's
+     plugin GUID (`shudnal.BuildPiecesCustomized`) is loaded first so this is
+     a no-op (not an error) when it isn't installed.
+   - BuildPiecesCustomized's output directory is **hardcoded, not
+     configurable** — always `Paths.ConfigPath/shudnal.BuildPiecesCustomized/`
+     (confirmed from source). True colocation (BPC writing directly into
+     ValheimDraft's folder) isn't possible; the practical equivalent is
+     ValheimDraft copying those JSON files into its own
+     `Documents/ValheimDraft/` output right after triggering the save.
+   - Net effect: one trip to the gaming PC (load a world) produces both
+     outputs together, in one place, with no manual console typing.
 
 ### Track B — devcontainer, proceeds regardless of Track A
 
