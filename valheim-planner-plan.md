@@ -175,16 +175,19 @@ unblocked right now," not a dependency graph to work simultaneously.
 
 ### Track A — needs Jared's Windows machine
 
-1. **Copy `Documents\ValheimDraft\pieces-dump.json` into this devcontainer**
-   (e.g. commit it to the `valheimdraft` repo). Not a game-launch task, just
-   a file copy — do this first, since it unblocks checking the extractor
-   gaps below against real data before deciding whether item 3 is needed.
+1. ~~Copy `Documents\ValheimDraft\pieces-dump.json` into this devcontainer~~
+   **Done** — committed to the `valheimdraft` repo. Checked against the
+   known extractor gaps below (see that section for what was confirmed).
 2. **Run `bpcsaveall`** (BuildPiecesCustomized console command) in-game to
    dump material costs.
-3. **Possibly re-run the extractor** with `center` added to its output —
-   decide after item 1 lands and the gaps below are checked against real
-   data. If needed, batch it into the same game session as item 2 (one trip,
-   not two).
+3. **Re-run the extractor** — confirmed needed, not just "possibly": the
+   bounds-`center` gap can't be resolved without a code change + rebuild
+   (nothing to check until it's in the output). While rebuilding, also fix
+   the snap-point local-to-root composition (`Plugin.cs:61`) in the same
+   pass — same file, same rebuild/launch cycle either way, so there's no
+   reason to risk a second trip if that one turns out to matter. The
+   duplicate-snap-point gap does *not* need this — it's fixed in the
+   webapp's loader instead. Batch this with item 2 (one game session).
 4. **`.vbuild` round-trip test** — export from the app, import into
    PlanBuild in-game, verify the layout matches. Not until export exists in
    Track B.
@@ -242,24 +245,36 @@ unblocked right now," not a dependency graph to work simultaneously.
 
 ### Known extractor gaps
 
-Found by reading `valheimdraft/Plugin.cs`; both need Track A item 1's JSON
-in hand to confirm against real data.
+`pieces-dump.json` landed (Track A item 1, done) and got checked against
+these:
 
-- **Bounds `center` isn't emitted** — `Plugin.cs:67` stores only
-  `bounds.size`. If a piece's mesh isn't centered on its prefab origin,
-  procedural geometry will sit offset from its own snap points. Cheap
-  workaround: assume `center = (0, size.y/2, 0)`. Real fix: add `center` to
-  `PieceData` (Track A item 3).
+- **Confirmed: duplicate snap points.** `ashwood_stair` has two exact
+  duplicates — `(0,1,-1)` and `(0,0,1)`, identical position *and* rotation
+  each. Matches the wear-state-subtree theory (`Plugin.cs:59` matches
+  inactive children too). **Fix in the webapp's loader** (dedupe identical
+  `pos`+`rot` pairs on load) — no extractor rebuild needed, confirmed cheap.
+- **Bounds `center` still isn't emitted** — `Plugin.cs:67` stores only
+  `bounds.size`, and this can't be checked from existing data (there's
+  nothing to inspect until it's added to the output). If a piece's mesh
+  isn't centered on its prefab origin, procedural geometry will sit offset
+  from its own snap points. Cheap workaround: assume
+  `center = (0, size.y/2, 0)`. Real fix: add `center` to `PieceData` (Track
+  A item 3, needs a rebuild + game launch).
 - **Snap points use raw `t.localPosition`** (`Plugin.cs:61`) — relative to
   each transform's *parent*, not composed through the hierarchy to root
   space the way `GetBounds` does. Wrong for any snap point nested deeper
   than a direct child of the root. `wood_floor`'s spot-check passing
-  suggests root-level children are the norm, but it's unverified across all
-  664 pieces.
-- Lower-confidence: the snap-point query also matches inactive children, so
-  pieces with `New`/`Worn`/`Broken` wear-state subtrees might emit
-  duplicate snap points. Fixable by deduping in the webapp's loader — no
-  extractor rebuild needed either way.
+  suggests root-level children are the norm, still unconfirmed either way
+  for the rest — no easy way to check this from the dump alone since a
+  wrong value looks just as plausible as a right one without in-game
+  ground truth.
+
+Also from inspecting the dump: **410 of 664 pieces have zero snap points**
+— sampling them shows this is expected, not a bug (food, furniture, material
+stacks, saplings, siege weapons — items placed freely, not on the snap
+grid). Worth remembering when picking the MVP wood-tier piece list: filter
+for pieces that actually have `snapPoints`, not just anything with a `Piece`
+component.
 
 ---
 
