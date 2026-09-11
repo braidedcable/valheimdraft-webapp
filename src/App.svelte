@@ -2,14 +2,22 @@
   import Viewport from './lib/Viewport.svelte';
   import PiecePalette from './lib/PiecePalette.svelte';
   import Attribution from './lib/Attribution.svelte';
+  import type { PlacedPiece } from './lib/types';
 
   let showAttribution = $state(false);
+  let selectedPrefab = $state<string | null>(null);
+  let placedPieces = $state<PlacedPiece[]>([]);
 </script>
 
 <div class="app">
   <header>
     <h1>ValheimDraft</h1>
     <p class="disclaimer">Unofficial fan project. Not affiliated with or endorsed by Iron Gate Studio.</p>
+    {#if placedPieces.length > 0}
+      <button class="link-button" onclick={() => (placedPieces = [])}>
+        Clear all ({placedPieces.length})
+      </button>
+    {/if}
     <button class="link-button" onclick={() => (showAttribution = !showAttribution)}>
       {showAttribution ? 'Back to planner' : 'Attribution'}
     </button>
@@ -22,10 +30,10 @@
       </div>
     {:else}
       <aside>
-        <PiecePalette />
+        <PiecePalette bind:selectedPrefab />
       </aside>
       <div class="viewport-wrap">
-        <Viewport />
+        <Viewport bind:selectedPrefab bind:placedPieces />
       </div>
     {/if}
   </main>
