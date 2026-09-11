@@ -1,6 +1,7 @@
 import * as THREE from 'three';
+import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 
-export type PieceShape = 'box' | 'cylinder' | 'wedge' | 'stairs';
+export type PieceShape = 'box' | 'cylinder' | 'wedge' | 'stairs' | 'ladder';
 
 /**
  * A thin box tilted to the piece's slope angle — not a solid triangular
@@ -55,6 +56,44 @@ function stairsGeometry(width: number, height: number, depth: number): THREE.Buf
   return geometry;
 }
 
+/**
+ * Two rails plus evenly spaced rungs, merged into one mesh and tilted to
+ * the piece's slope angle (same atan2 approach as the roof panel) — a
+ * ladder is an open frame, not a solid panel or block either (same
+ * complaint as stairs, different shape). RUNG_COUNT is a fixed "looks like
+ * a ladder" guess, not derived from data.
+ *
+ * NOT visually verified — this environment has no browser.
+ */
+const RUNG_COUNT = 6;
+
+function ladderGeometry(width: number, rise: number, run: number): THREE.BufferGeometry {
+  const length = Math.hypot(rise, run);
+  const railThickness = 0.08;
+  const rungThickness = 0.06;
+  const railInset = width * 0.08; // rails sit slightly in from the outer edges
+
+  const parts: THREE.BufferGeometry[] = [];
+
+  for (const side of [-1, 1]) {
+    const rail = new THREE.BoxGeometry(railThickness, railThickness, length);
+    rail.translate(side * (width / 2 - railInset), 0, 0);
+    parts.push(rail);
+  }
+
+  const rungSpan = width - railInset * 2;
+  for (let i = 1; i <= RUNG_COUNT; i++) {
+    const z = -length / 2 + (i / (RUNG_COUNT + 1)) * length;
+    const rung = new THREE.BoxGeometry(rungSpan, rungThickness, rungThickness);
+    rung.translate(0, 0, z);
+    parts.push(rung);
+  }
+
+  const geometry = mergeGeometries(parts, false);
+  geometry.rotateX(Math.atan2(rise, run));
+  return geometry;
+}
+
 export function geometryForPiece(shape: PieceShape, bounds: { x: number; y: number; z: number }): THREE.BufferGeometry {
   switch (shape) {
     case 'cylinder': {
@@ -65,6 +104,8 @@ export function geometryForPiece(shape: PieceShape, bounds: { x: number; y: numb
       return slopedPanelGeometry(bounds.x, bounds.y, bounds.z);
     case 'stairs':
       return stairsGeometry(bounds.x, bounds.y, bounds.z);
+    case 'ladder':
+      return ladderGeometry(bounds.x, bounds.y, bounds.z);
     case 'box':
     default:
       return new THREE.BoxGeometry(bounds.x, bounds.y, bounds.z);

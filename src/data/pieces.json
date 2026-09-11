@@ -1317,7 +1317,7 @@
     {
       "prefab": "wood_stepladder",
       "label": "Wood Ladder",
-      "shape": "wedge",
+      "shape": "ladder",
       "materialFamily": "wood",
       "bounds": {
         "x": 1.000001,
