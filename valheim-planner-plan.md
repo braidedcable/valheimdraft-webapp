@@ -2,7 +2,7 @@
 
 ## Context
 
-Build a browser-based interactive Valheim building simulator, hosted on GitHub Pages, where a user can place buildable pieces (walls, beams, roofs, floors, etc.) to design bases. This document started as **Phase 0** — an asset-availability investigation the user asked for up front — and has since grown to cover the full MVP build. **MVP is now complete** (see "MVP status: COMPLETE" below); everything past that point is tracked in "Backlog" as deliberately deferred, low-priority work, not abandoned or forgotten.
+Build a browser-based interactive Valheim building simulator, hosted on GitHub Pages, where a user can place buildable pieces (walls, beams, roofs, floors, etc.) to design bases. This document started as **Phase 0** — an asset-availability investigation the user asked for up front — and has since grown to cover the full MVP build. MVP was briefly declared complete, then **reopened** with one added requirement — vertical (Y-axis) placement/snapping, since ground-plane-only placement doesn't hold up as a building simulator — see "MVP status: REOPENED" below. Everything past that point is tracked in "Backlog" as deliberately deferred, low-priority work, not abandoned or forgotten.
 
 ## Project ground rules (committed)
 
@@ -180,18 +180,56 @@ Findings that corrected the plan's assumptions, for whoever touches the extracto
 
 ---
 
-## MVP status: COMPLETE
+## MVP status: REOPENED — vertical placement/snapping added as a new MVP item
 
-Per the revised scope (decision 5 above, `.blueprint` moved to backlog): every MVP-scoped item is done, deployed, and verified. Live at https://braidedcable.github.io/valheimdraft-webapp/:
+Was declared complete; reopened by explicit user request to add one more
+required item before MVP actually counts as done, because the gap is
+fundamental to the "building simulator" premise, not a nice-to-have:
 
-- Place, snap, rotate, relocate, delete all 18 wood-tier pieces (decision 3).
+**6. Vertical (Y-axis) placement and snapping — required, not yet built.**
+Every piece placement today is locked to the ground plane; there is no way
+to build a second story, stack poles, or place a wall on top of another
+wall. Root cause, confirmed by reading the code and the data (not guessed):
+- `Viewport.svelte`'s `handlePointerMove` raycasts **only** against the flat
+  ground mesh (`raycastGround()`, intersecting `ground` alone — placed
+  pieces are never included in that raycast) and then hardcodes the
+  tentative Y to rest on the ground (`piece.bounds.y / 2 - piece.center.y`),
+  regardless of where the cursor is or what's underneath it.
+- `snapPosition()` in `snapping.ts` itself has **no axis restriction** — it
+  already searches all pairs of ghost/placed snap points in full 3D and
+  snaps within a 1.0-unit radius. It structurally already supports
+  vertical connections.
+- The piece data already carries top/bottom snap points at different
+  heights — confirmed directly: `wood_pole` has snap points at y=+0.5 and
+  y=-0.5 (its own 1m height), `wood_wall_log` at y=+0.25/-0.25. So the data
+  and the matching algorithm are both ready; only the *ghost's starting
+  position* is wrong. A tentative position computed by always resting on
+  the ground can never land within 1.0 units of a snap point that's 1–3m
+  up on top of an already-placed piece, so vertical snapping can never
+  trigger today no matter how carefully you aim.
+- **The fix**: extend the placement raycast to also hit already-placed
+  pieces (the same `placedGroup.children` `raycastPlaced()` already uses
+  for pick-up/delete), and when that raycast — not the ground — is the
+  hit, compute the tentative Y from that piece's surface instead of from
+  the ground. That gets the tentative position close enough for the
+  existing, already-correct 3D snap search to find and lock onto the right
+  upper/lower snap-point pair. No changes needed to `snapping.ts` or to
+  `pieces.json`.
+- Scope note: this is squarely a `Viewport.svelte` placement-logic change,
+  isolated from persistence/undo/share (Wave 2) and the `.blueprint`
+  question (backlog) — safe to plan and build independently of either.
+
+Everything else from the original MVP scope remains done, deployed, and
+verified — this is the one open item before MVP is complete again:
+
+- Place, snap, rotate, relocate, delete all 18 wood-tier pieces (decision 3) — ground-plane-only, per the gap above.
 - Materials cost tally.
 - Persistence: `localStorage` autosave, JSON export/import, shareable URL links.
 - Full undo/redo.
 - Attribution page + disclaimer, GitHub Pages deploy pipeline with CI typecheck.
 - Structural integrity was never in MVP scope (decision 4) — no gap there.
 
-Everything not in that list is post-MVP by design. See "Backlog" below for what's left and why each item is deferred rather than abandoned.
+See "Backlog" below for what's separately deferred (not part of MVP) and why.
 
 ## Backlog (post-MVP, low priority — revisit later, not now)
 
@@ -213,8 +251,9 @@ Jared's at that machine; Track B proceeds regardless. Within Track B nothing
 is truly parallel — it's a solo project — so the grouping below is "what's
 unblocked right now," not a dependency graph to work simultaneously.
 
-**Status:** MVP complete — see "MVP status: COMPLETE" near the top of this
-doc for the checklist, and "Backlog" for what's deferred and why. A
+**Status:** MVP reopened, one item open (vertical placement/snapping) — see
+"MVP status: REOPENED" near the top of this doc for the technical detail,
+and "Backlog" for what's separately deferred and why. A
 headless-browser verification harness (`npm run verify`, Playwright +
 Chromium) now exists so UI changes can be checked in this devcontainer
 without deploying first — CI also runs `npm run check` now, not just
