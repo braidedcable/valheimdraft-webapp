@@ -619,6 +619,51 @@ game's scroll-to-rotate scheme):**
   ~15 units apart don't spuriously cross-snap; vertical pole-stacking and
   scroll-wheel rotation (both from the immediately preceding session)
   remain unaffected.
+- **Follow-up correction, same day, user-reported:** the overlap heuristic
+  above was itself wrong for a case its own testing hadn't covered — a
+  wall placed *end-to-end* next to another (extending a wall line
+  horizontally, both at the same height) came out **staggered**, offset
+  up or down by the snap-point spacing, instead of flush. Why: a flush
+  connection is *supposed* to have full vertical overlap (both walls
+  occupy the identical height range — that's what flush means), so
+  "prefer minimal overlap" actively penalized the correct answer and
+  preferred a mismatched top-to-bottom pairing instead. Testing at the
+  time covered pure vertical stacking and floor-to-floor (floors have
+  snap points at only one height, so this exact failure mode can't occur
+  there) but never end-to-end wall-to-wall — a real gap in verification
+  coverage, not just bad luck.
+
+  **Redesigned per direct user feedback**, replacing overlap-scoring
+  entirely: score every qualifying candidate by how close the piece's own
+  *resulting visual center* (root + rotated `piece.center`, exactly as
+  `Viewport.svelte`'s `positionMesh()` renders it) would land to the
+  *aiming ray itself* — not an abstract property of the candidate, but
+  literally where the cursor is pointing. One rule resolves both cases
+  through the same logic: aiming above a piece puts the "stack on top"
+  candidate's center near the continuing ray (embedding into it doesn't);
+  aiming level with a wall's end puts the "flush" candidate's center near
+  the ray (a staggered mismatch doesn't). No special-casing which
+  scenario it is.
+
+  **One genuine mathematical limit, not a design flaw:** when the aiming
+  ray is (near) perfectly vertical — the ordinary case for the "Top"
+  camera preset aimed anywhere near screen center — distance-to-candidate-
+  center carries *no* real signal at all, since a vertical ray's distance
+  to a point depends only on horizontal offset, never height; two
+  candidates directly above vs. below the same point are exactly tied by
+  construction, differing only by camera-math floating-point noise
+  (measured ~1e-4). Detected directly from the ray's own shape
+  (`ray.direction.x²+z² < 0.01²`, calibrated against the "Top" preset's
+  deliberate small tilt to avoid gimbal lock, vs. ~1e-2+ for any
+  meaningfully off-center aim) rather than by comparing scores generally,
+  so it only engages in that specific degenerate regime and never
+  interferes with ordinary scoring elsewhere. Within it, falls back to
+  the same "prefer building upward" convention the old code already used.
+  Verified numerically both ways: end-to-end wall extension now lands
+  both pieces at the identical Y (to float precision); wall-on-wall
+  stack, pole stack, and floor edge-to-edge all re-confirmed unaffected;
+  aiming above vs. level with the same wall produces the two different
+  correct outcomes (stack vs. flush-extend) from the one mechanism.
 
 **Everything not yet built from here is tracked in the "Backlog" section
 near the top of this doc, not repeated here.**
