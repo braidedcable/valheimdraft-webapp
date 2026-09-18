@@ -2,7 +2,7 @@
 
 ## Context
 
-Build a browser-based interactive Valheim building simulator, hosted on GitHub Pages, where a user can place buildable pieces (walls, beams, roofs, floors, etc.) to design bases. This document captures **Phase 0** — an asset-availability investigation the user asked for up front.
+Build a browser-based interactive Valheim building simulator, hosted on GitHub Pages, where a user can place buildable pieces (walls, beams, roofs, floors, etc.) to design bases. This document started as **Phase 0** — an asset-availability investigation the user asked for up front — and has since grown to cover the full MVP build. **MVP is now complete** (see "MVP status: COMPLETE" below); everything past that point is tracked in "Backlog" as deliberately deferred, low-priority work, not abandoned or forgotten.
 
 ## Project ground rules (committed)
 
@@ -176,7 +176,32 @@ Findings that corrected the plan's assumptions, for whoever touches the extracto
 2. **Framework preference**: Svelte + Vite. Compiles away at build time, minimal runtime, gives reactive state for the palette/cost-tally/undo bookkeeping without hand-rolled DOM diffing, and avoids the extra integration layer (react-three-fiber) React would need for Three.js.
 3. **MVP piece scope**: wood-tier subset first (~15-20 pieces: floor, wall, roof, pole, stairs, door). Materials mostly reskin the same shapes (box/wedge/cylinder) with flat color, so once shape generators exist for wood tier, adding other materials is mostly more `pieces.json` entries, not a rewrite.
 4. **Structural integrity**: deferred past MVP, consistent with wood-tier-first — ship pure placement (place/rotate/remove, no stability simulation) before adding real support-propagation logic.
-5. **`.blueprint` import/export** (retargeted from `.vbuild` — see "Blueprint interop" above for why): export ships in MVP, roughly a day of work given `PlacedPiece` already matches the needed shape — not near-free, since origin-relative coordinates, field order, and number formatting all need to be right, and the Unity/Three.js handedness question needs confirming first. Import is v2 — needs prefab-name mapping and error handling that export doesn't.
+5. **`.blueprint` import/export** (retargeted from `.vbuild` — see "Blueprint interop" above for why): ~~export ships in MVP~~ **revised — moved to backlog, out of MVP scope.** This decision was written before the actual research (rotation-handedness question, real per-day effort estimate, "we'd be the only `.vbuild` writer in the ecosystem") existed; once that was known, it stopped being the "near-free" MVP add-on it was scoped as. Deprioritized by explicit user decision — see the "Backlog" section below.
+
+---
+
+## MVP status: COMPLETE
+
+Per the revised scope (decision 5 above, `.blueprint` moved to backlog): every MVP-scoped item is done, deployed, and verified. Live at https://braidedcable.github.io/valheimdraft-webapp/:
+
+- Place, snap, rotate, relocate, delete all 18 wood-tier pieces (decision 3).
+- Materials cost tally.
+- Persistence: `localStorage` autosave, JSON export/import, shareable URL links.
+- Full undo/redo.
+- Attribution page + disclaimer, GitHub Pages deploy pipeline with CI typecheck.
+- Structural integrity was never in MVP scope (decision 4) — no gap there.
+
+Everything not in that list is post-MVP by design. See "Backlog" below for what's left and why each item is deferred rather than abandoned.
+
+## Backlog (post-MVP, low priority — revisit later, not now)
+
+1. **`.blueprint` export/import** — moved out of MVP scope (decision 5). Real effort (~a day, not near-free) with one open technical question: whether exported rotations need a Unity-left-handed ↔ Three.js-right-handed conversion. Full writeup, including a best-guess-without-testing reasoning chain (positions probably fine, rotations probably need conversion — moderate-to-high confidence something's needed, low confidence on the exact fix), is in "Blueprint interop" above. **Before implementing:** round-trip a real `.blueprint` fixture (e.g. `TestBox_V2.blueprint` from github.com/AugusDogus/Buildheim) through this app's data model and check whether it renders right-side-up or mirrored/misrotated — don't guess the conversion, test it. Import is a further step past export — needs prefab-name mapping and more error handling.
+2. **Structural integrity simulation** (Valheim's beam-support rules) — never scoped past "someday"; no design work started.
+3. **CC0 tiling textures** in place of flat material colors — purely cosmetic, optional, no urgency. Candidate sources already identified if picked up: ambientCG, Poly Haven, Kenney.nl, OpenGameArt (see "Art strategy" above).
+4. **Mesh instancing** — only matters if framerate becomes a real problem at higher piece counts; not needed at current wood-tier scale.
+5. **Known minor gap, not urgent:** Toolbar's Undo/Redo *buttons* (as opposed to the Ctrl+Z/Ctrl+Shift+Z keyboard shortcuts) don't cancel an in-progress piece move first. Confirmed low-severity by direct testing — no crash, no data corruption, recoverable via the existing right-click-cancel. See the undo/redo entry under Track B below for full detail.
+6. **Track A item 5 — `bpcsaveall` automation, needs in-game verification.** Code is written but only checked by review, not run in-game. Low priority since current cost data already in hand covers what's needed; only matters if the piece catalog grows and needs a refreshed cost dump.
+7. **Track A item 4 — `.blueprint` round-trip test** (export from the app, import into PlanBuild in-game, confirm the layout matches). Blocked on item 1 above existing first.
 
 ---
 
@@ -188,29 +213,20 @@ Jared's at that machine; Track B proceeds regardless. Within Track B nothing
 is truly parallel — it's a solo project — so the grouping below is "what's
 unblocked right now," not a dependency graph to work simultaneously.
 
-**Status as of this session's end:** the app is live and functional —
-https://braidedcable.github.io/valheimdraft-webapp/. You can place, snap,
-rotate, relocate, and delete all 18 MVP wood-tier pieces, with a live
-materials cost tally, working camera controls (orbit, WASD pan, presets),
-persistence (`localStorage` autosave, JSON export/import, shareable URL
-links), and full undo/redo. A headless-browser verification harness
-(`npm run verify`, Playwright + Chromium) now exists so UI changes can be
-checked in this devcontainer without deploying first — CI also runs
-`npm run check` now, not just `build`. The entire persistence/undo/share
-backlog from the previous session's list is done; the one remaining item is
-`.blueprint` export (not `.vbuild` — see correction below), deferred
-pending the Unity/Three.js coordinate-handedness question. Track A has one
-outstanding item verified only by code review, not in-game (item 5,
-`bpcsaveall` automation) — low priority, current data already in hand
-covers what's needed.
+**Status:** MVP complete — see "MVP status: COMPLETE" near the top of this
+doc for the checklist, and "Backlog" for what's deferred and why. A
+headless-browser verification harness (`npm run verify`, Playwright +
+Chromium) now exists so UI changes can be checked in this devcontainer
+without deploying first — CI also runs `npm run check` now, not just
+`build`.
 
 **Correction (subagent-driven session, materials-tally + dedupe batch):**
 `.vbuild` was the wrong export target — see "Blueprint interop" and
-"Resolved decisions" below for the full correction. Short version: no
+"Resolved decisions" above for the full correction. Short version: no
 current tool writes `.vbuild` anymore, PlanBuild upgrades it to
 `.blueprint` on save, and `.blueprint` is a superset (name/category/scale/
 signs/chest contents) that the ecosystem actually reads and writes today.
-Target `.blueprint` when that work starts.
+Target `.blueprint` when that work starts (tracked in "Backlog").
 
 ### Track A — needs Jared's Windows machine
 
@@ -453,16 +469,8 @@ above):**
   was needed, but it was verified rather than trusted from the agent's
   report alone.
 
-**Explicitly deferred past MVP:**
-- Structural integrity simulation (Valheim's beam-support rules).
-- Swapping flat material colors for CC0 tiling textures.
-- `.blueprint` export/import — see "Blueprint interop" correction above;
-  budget ~a day, not near-free, and confirm the Unity/Three.js handedness
-  question before writing the serializer. Deferred (not started) in favor
-  of finishing the persistence/undo/share chain first.
-- Mesh instancing — plain meshes are fine at a wood-tier piece count, and
-  instancing complicates per-piece raycast/select/remove. Add it if
-  framerate actually becomes a problem.
+**Everything not yet built from here is tracked in the "Backlog" section
+near the top of this doc, not repeated here.**
 
 ### Known extractor gaps
 
