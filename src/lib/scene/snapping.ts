@@ -126,14 +126,29 @@ const RAY_SNAP_REACH = 1.5;
  *    RAY_SNAP_REACH), independent of where the raycast's single hit point
  *    landed — the fallback for a thin piece the raycast missed entirely.
  *
+ * Candidates are ranked PRIMARILY by how close the aiming ray itself passes
+ * to the real, already-placed target point (`rayDist`, the same distance
+ * already computed above to gate qualification) — this directly answers
+ * "which real connection point is the user pointing at," independent of the
+ * piece's own geometry or which of its snap points ends up mating with that
+ * point. This matters for long pieces: if the user aims at a target wanting
+ * the FAR end of the new piece to attach there, the piece's own visual
+ * center necessarily lands well away from that target (and from the ray) —
+ * scoring primarily by center-distance would then wrongly favor a candidate
+ * that attaches via the NEAR end instead, just to keep the center close to
+ * the ray, even though the user pointed exactly at the far-end connection.
+ * Ranking by rayDist first avoids that: it picks the target point the user
+ * is actually pointing at, before any piece-geometry consideration.
+ *
  * A single target point is ambiguous about which of the ghost's own snap
  * points should mate with it — e.g. a wall's top and bottom end points sit
  * at the same (x, z), so a top-down aiming ray can't tell them apart, and
  * neither can tentativePos once it's already wrong in Y (that's exactly the
- * bug this function exists to fix). Rather than inferring intent from
- * abstract properties of a candidate (e.g. how much it overlaps the target
- * vertically), every qualifying pairing is scored by the one signal that
- * directly reflects what the user is aiming at: how close the piece's
+ * bug this function exists to fix). Two candidates sharing the exact same
+ * target point necessarily share the exact same rayDist too (it's computed
+ * once per target point, reused for every ghost snap point paired with it),
+ * so this case surfaces as a genuine, bit-exact rayDist tie. When that
+ * happens, the SECONDARY criterion breaks the tie: how close the piece's
  * resulting *visual center* (root + rotated piece.center, exactly as
  * Viewport.svelte's positionMesh() renders it) would land to the aiming ray
  * itself. Smaller wins. This one rule naturally distinguishes "aiming above
@@ -143,27 +158,29 @@ const RAY_SNAP_REACH = 1.5;
  * mismatched/staggered candidate's center does not), with no special-casing
  * of either scenario.
  *
- * One case this center-distance metric genuinely cannot resolve on its own:
- * when the aiming ray is (close to) perfectly vertical — the ordinary case
- * for the "Top" camera preset aimed anywhere near screen center — candidates
- * that sit directly above vs. directly below the same point are, by
- * construction, both essentially ON that vertical line, so their distances
- * to the ray come out nearly identical (differing only by camera-model
- * floating-point noise, not by any real signal). That's the exact
- * degeneracy the removed algorithm's own comments already called out
- * ("a straight-down aiming ray genuinely cannot distinguish stack on top
- * from stack underneath a thin target"); it's a property of the ray's
- * geometry, not of piece overlap, so resolving it doesn't need overlap math
- * — just the same "build upward" tie-break the old code already reached
- * for as its own last resort. Confirmed empirically (see PR notes): without
- * this, straight-down stacking picks the wrong candidate roughly half the
- * time, purely on floating-point noise. Detected directly from the ray's
- * own shape (its horizontal-plane direction is ~0), not by comparing
- * scores, so it only ever engages in this specific near-vertical-aim
- * regime and never interferes with the ordinary (non-degenerate) scoring
- * used for every other camera angle or off-center aim — including the
- * flush wall-extension case above, where the ray's real horizontal slope
- * already carries a genuine, non-degenerate signal.
+ * One case neither metric can resolve on its own: when the aiming ray is
+ * (close to) perfectly vertical — the ordinary case for the "Top" camera
+ * preset aimed anywhere near screen center — candidates that sit directly
+ * above vs. directly below the same point are, by construction, both
+ * essentially ON that vertical line, so BOTH their rayDist (two distinct
+ * target points at the same x/z) and their centerDist come out nearly
+ * identical (differing only by camera-model floating-point noise, not by
+ * any real signal). That's the exact degeneracy an earlier version of this
+ * algorithm's own comments already called out ("a straight-down aiming ray
+ * genuinely cannot distinguish stack on top from stack underneath a thin
+ * target"); it's a property of the ray's geometry, not of piece overlap, so
+ * resolving it doesn't need overlap math — just a "build upward" tie-break
+ * as the last resort, applied only once both rayDist and centerDist have
+ * already failed to distinguish two candidates for real. Confirmed
+ * empirically (see PR notes): without this, straight-down stacking picks
+ * the wrong candidate roughly half the time, purely on floating-point
+ * noise. Detected directly from the ray's own shape (its horizontal-plane
+ * direction is ~0), not by comparing scores, so it only ever engages in
+ * this specific near-vertical-aim regime and never interferes with the
+ * ordinary (non-degenerate) scoring used for every other camera angle or
+ * off-center aim — including the flush wall-extension and far-end-reach
+ * cases above, where the ray's real horizontal slope already carries a
+ * genuine, non-degenerate signal.
  */
 // Below this, the ray's own direction is treated as "(near) perfectly
 // vertical" — the degenerate aiming case described above, where distance-
@@ -204,6 +221,7 @@ export function snapPositionAlongRay(
     RAY_NEAR_VERTICAL_THRESHOLD * RAY_NEAR_VERTICAL_THRESHOLD;
 
   let bestPos: THREE.Vector3 | null = null;
+  let bestRayDist = Infinity;
   let bestCenterDist = Infinity;
   let bestCenterY = -Infinity;
 
@@ -229,19 +247,45 @@ export function snapPositionAlongRay(
         const candidateCenter = candidatePos.clone().add(rotatedCenter);
         const centerDist = ray.distanceToPoint(candidateCenter);
 
+        // PRIMARY: rayDist — which real target point the user is actually
+        // pointing at. Two candidates sharing the same target point share
+        // the exact same (bit-identical) rayDist value, since it's computed
+        // once per target point above and reused here; that exact equality
+        // is the genuine tie this falls through on. A near-vertical ray can
+        // also produce a near-tie between two DIFFERENT target points at
+        // the same (x, z) (top vs. bottom of a placed piece) — camera-math
+        // noise, not a real signal — so that case is folded into the same
+        // tie check via NEAR_VERTICAL_TIE_EPSILON.
+        const rayDistTied =
+          !bestPos ||
+          rayDist === bestRayDist ||
+          (rayIsNearVertical && Math.abs(rayDist - bestRayDist) <= NEAR_VERTICAL_TIE_EPSILON);
+
         let better: boolean;
         if (!bestPos) {
           better = true;
-        } else if (rayIsNearVertical && Math.abs(centerDist - bestCenterDist) <= NEAR_VERTICAL_TIE_EPSILON) {
-          // Genuinely tied under a near-vertical aim: fall back to "build
-          // upward" rather than let camera-math noise decide.
-          better = candidateCenter.y > bestCenterY;
+        } else if (!rayDistTied) {
+          better = rayDist < bestRayDist;
         } else {
-          better = centerDist < bestCenterDist;
+          // SECONDARY (only among rayDist-tied candidates): centerDist —
+          // which of the ghost's own snap points should mate with this
+          // shared target point.
+          const centerDistTied =
+            rayIsNearVertical && Math.abs(centerDist - bestCenterDist) <= NEAR_VERTICAL_TIE_EPSILON;
+
+          if (!centerDistTied) {
+            better = centerDist < bestCenterDist;
+          } else {
+            // TERTIARY: genuinely tied under a near-vertical aim even after
+            // both metrics above — fall back to "build upward" rather than
+            // let camera-math noise decide.
+            better = candidateCenter.y > bestCenterY;
+          }
         }
 
         if (better) {
           bestPos = candidatePos;
+          bestRayDist = rayDist;
           bestCenterDist = centerDist;
           bestCenterY = candidateCenter.y;
         }
