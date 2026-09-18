@@ -4,7 +4,7 @@
   import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
   import { geometryForPiece, DOUBLE_SIDED_SHAPES, type PieceShape } from './scene/geometry';
   import { colorForFamily } from './scene/materials';
-  import { getPieceData, snapPosition, type PieceEntry } from './scene/snapping';
+  import { getPieceData, snapPositionAlongRay, type PieceEntry } from './scene/snapping';
   import type { PlacedPiece } from './types';
 
   let { selectedPrefab = $bindable(null), placedPieces = $bindable([]), onUndo, onRedo }: {
@@ -199,16 +199,21 @@
       // is actually over — the ground (hitPoint.y ~= 0, same as before) or
       // a placed piece's mesh (hitPoint.y = that surface's real height).
       // Either way this only needs to land within SNAP_RADIUS of the real
-      // snap point for snapPosition() below to lock onto it exactly. A
-      // pure-yaw rotation leaves Y unchanged, so center.y is still a valid
-      // vertical offset post-rotation.
+      // snap point for snapPositionAlongRay() below to lock onto it exactly
+      // (or, failing that, for the ray-based fallback inside it to find the
+      // real snap point the cursor is actually aiming near). A pure-yaw
+      // rotation leaves Y unchanged, so center.y is still a valid vertical
+      // offset post-rotation.
       const tentativePos = surfaceHit.clone();
       tentativePos.y = surfaceHit.y + piece.bounds.y / 2 - piece.center.y;
 
       // Exclude the piece currently being moved from its own snap targets
       // — otherwise it'd snap to its own pre-move position.
       const snapTargets = movingPieceId ? placedPieces.filter((p) => p.id !== movingPieceId) : placedPieces;
-      const snapped = snapPosition(prefab, tentativePos, rot, snapTargets);
+      // raycaster.ray reflects the setFromCamera() call inside
+      // raycastGroundAndPlaced() above — still valid here since nothing
+      // between there and here re-runs setFromCamera with different args.
+      const snapped = snapPositionAlongRay(prefab, tentativePos, rot, snapTargets, raycaster.ray);
 
       pendingPos = snapped;
       pendingRot = rot;
