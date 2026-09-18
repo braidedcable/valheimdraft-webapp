@@ -184,16 +184,18 @@ unblocked right now," not a dependency graph to work simultaneously.
 **Status as of this session's end:** the app is live and functional —
 https://braidedcable.github.io/valheimdraft-webapp/. You can place, snap,
 rotate, relocate, and delete all 18 MVP wood-tier pieces, with a live
-materials cost tally, working camera controls (orbit, WASD pan, presets).
-A headless-browser verification harness (`npm run verify`, Playwright +
-Chromium) now exists so UI changes can be checked in this devcontainer
-without deploying first — CI also runs `npm run check` now, not just
-`build`. Next actionable items, roughly smallest-first: `localStorage`
-save/load, JSON export/import, `.blueprint` export (not `.vbuild` — see
-correction below), undo/redo, shareable URL — all detailed under Track B
-below. Track A has one outstanding item verified only by code review, not
-in-game (item 5, `bpcsaveall` automation) — low priority, current data
-already in hand covers what's needed.
+materials cost tally, working camera controls (orbit, WASD pan, presets),
+persistence (`localStorage` autosave, JSON export/import, shareable URL
+links), and full undo/redo. A headless-browser verification harness
+(`npm run verify`, Playwright + Chromium) now exists so UI changes can be
+checked in this devcontainer without deploying first — CI also runs
+`npm run check` now, not just `build`. The entire persistence/undo/share
+backlog from the previous session's list is done; the one remaining item is
+`.blueprint` export (not `.vbuild` — see correction below), deferred
+pending the Unity/Three.js coordinate-handedness question. Track A has one
+outstanding item verified only by code review, not in-game (item 5,
+`bpcsaveall` automation) — low priority, current data already in hand
+covers what's needed.
 
 **Correction (subagent-driven session, materials-tally + dedupe batch):**
 `.vbuild` was the wrong export target — see "Blueprint interop" and
@@ -393,22 +395,64 @@ this batch — worth remembering whenever the catalog grows past wood tier:
 - Headless verification harness (`npm run verify`) — see top of Track B
   status section above.
 
-**Still needs building (persistence family — not yet started):**
-- Save/load to `localStorage`.
-- Export/import as JSON.
-- `.blueprint` export — see "Blueprint interop" correction above; budget
-  ~a day, not near-free, and confirm the Unity/Three.js handedness question
-  before writing the serializer.
-- Undo/redo (state snapshots) — every mutation site is already a whole-array
-  reassignment (`Viewport.svelte`'s move/add/delete, `App.svelte`'s clear),
-  so snapshotting is straightforward; needs a re-entrancy guard so undo's
-  own reassignment doesn't push a new history entry.
-- Shareable URL (encode state in the hash).
+**Done and verified in-browser (persistence-chain batch, same session as
+above):**
+- `localStorage` save/load (`src/lib/persistence.ts`, autosave `$effect` in
+  `App.svelte`) — versioned envelope, validated on read, degrades to empty
+  on any storage failure (private browsing, quota, disabled). Refresh
+  round-trip and Clear-all-persists-empty both verified interactively.
+  `Toolbar.svelte` was extracted from `App.svelte`'s inline header as part
+  of this task, specifically so later toolbar-adding tasks (below) wouldn't
+  each re-edit `App.svelte`'s markup.
+- JSON export/import — Export downloads `valheimdraft-<timestamp>.json` via
+  `persistence.ts`'s `serialize()`; Import validates via `deserialize()`
+  and shows an inline error on malformed files without touching existing
+  state. Ids are regenerated (`crypto.randomUUID()`) on import since
+  `PlacedPiece.id` is a UI-only key, not part of the layout's meaning.
+  Round-trip and malformed-file error path both verified interactively.
+- Undo/redo — history lives in `App.svelte` as `past`/`future` snapshot
+  stacks driven by a single `$effect` watching `placedPieces` (same pattern
+  as the autosave effect), which makes Clear-all and JSON import undoable
+  for free without touching those files. Two re-entrancy traps handled: a
+  `suppressHistoryPush` flag so undo/redo's own reassignment isn't recorded
+  as a new step, and `untrack()` around the `past`/`future` reads/writes
+  inside the effect (writing to them would otherwise re-trigger the same
+  effect — hit `effect_update_depth_exceeded` during development before
+  this fix). Ctrl+Z/Ctrl+Shift+Z/Ctrl+Y bound in `Viewport.svelte`; an
+  in-progress move (piece picked up, not yet dropped) is cancelled before
+  an undo/redo fires via the keyboard path. **Known minor gap, confirmed
+  low-severity by direct testing, not fixed:** the Toolbar's Undo/Redo
+  *buttons* don't go through that same move-cancel step (only the keyboard
+  shortcut does) — triggering undo/redo via the button while mid-move can
+  leave a ghost that silently fails to commit on the next click. No crash,
+  no data corruption, no console errors (verified), and the existing
+  right-click-cancel always recovers it. Worth closing if it comes up, not
+  urgent.
+- Shareable URL — `src/lib/shareUrl.ts` encodes the scene via
+  `CompressionStream('gzip')` + base64url (a `g`/`r` prefix tag lets the
+  decoder fall back to uncompressed base64url if `CompressionStream` isn't
+  available), capped at 8000 encoded characters. `App.svelte` decodes
+  `location.hash` on startup (after the synchronous `localStorage` restore,
+  since decoding is async and `$state`'s initial value can't await
+  anything), takes priority over the localStorage-restored layout, and
+  clears the hash immediately so a reload or a failed decode never
+  re-applies it. A shared-link load does not itself become an undo step
+  (Ctrl+Z right after opening a link is a no-op, by design) — **this was
+  checked directly against a real timing race, not just assumed**: an
+  earlier hypothesis that the async decode could race the undo-history
+  effect's first run and corrupt the *next* action's undo entry turned out,
+  on instrumented testing, not to occur in practice (the effect's first run
+  reliably completes before gzip decompression resolves) — no code change
+  was needed, but it was verified rather than trusted from the agent's
+  report alone.
 
 **Explicitly deferred past MVP:**
 - Structural integrity simulation (Valheim's beam-support rules).
 - Swapping flat material colors for CC0 tiling textures.
-- `.blueprint` import.
+- `.blueprint` export/import — see "Blueprint interop" correction above;
+  budget ~a day, not near-free, and confirm the Unity/Three.js handedness
+  question before writing the serializer. Deferred (not started) in favor
+  of finishing the persistence/undo/share chain first.
 - Mesh instancing — plain meshes are fine at a wood-tier piece count, and
   instancing complicates per-piece raycast/select/remove. Add it if
   framerate actually becomes a problem.
