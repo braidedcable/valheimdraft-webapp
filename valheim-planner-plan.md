@@ -45,7 +45,15 @@ Wiki tables are prose-per-piece, not machine-friendly.
 
 ### Blueprint interop
 
-**PlanBuild** (github.com/sirskunkalot/PlanBuild) is the canonical in-game planner mod and defines `.blueprint` / `.vbuild` formats. `.vbuild` is **plaintext, one piece per line** (piece name, position, rotation) — trivial to parse. Supporting import/export gives instant interop with PlanBuild users and the Valheimians.com blueprint library. High-payoff, low-effort feature.
+**PlanBuild** (github.com/sirskunkalot/PlanBuild) is the canonical in-game planner mod and defines `.blueprint` / `.vbuild` formats. Both are plaintext, one piece per line, but **target `.blueprint`, not `.vbuild`** — corrected after reading PlanBuild's actual parser source, not just a summary:
+
+- `.vbuild` line: `name rotX rotY rotZ rotW posX posY posZ [zdoData] [chance]` — rotation *before* position, no header, no metadata. It's the legacy BuildShare format; PlanBuild reads it only for backwards compatibility and **rewrites it to `.blueprint` on save** (`FileFormat.VBuild` branch in `Blueprint.ToFile` renames `.vbuild` → `.blueprint`). No current tool (PlanBuild, Expand World, ValheimBuildConverter) writes `.vbuild` — we would be the only `.vbuild` writer in the ecosystem.
+- `.blueprint` line: `name;category;posX;posY;posZ;rotX;rotY;rotZ;rotW;additionalInfoJSON;scaleX;scaleY;scaleZ` (position before rotation, reversed vs. `.vbuild`), plus a `#Name`/`#Description`/`#Pieces` header block. Superset of `.vbuild`: adds category, per-piece scale, and `additionalInfo` (sign text, container/item-stand contents, ward state). This is what PlanBuild writes and what Valheimians.com's library is built on.
+- **Position is relative to a per-blueprint origin** (the min corner across all placed pieces, or a designated center piece), not absolute world space — `Blueprint.Capture` subtracts this origin on save and re-adds it on placement. Emit min-corner-relative coordinates.
+- **Handedness gotcha, unresolved:** Unity/Valheim is left-handed, Three.js is right-handed. No axis flip exists anywhere in this codebase today (verified: nothing in `src/lib/scene/*` or `Viewport.svelte` negates an axis), and `pieces.json`'s snap points came from the extractor unflipped — so placed-piece coordinates are plausibly already in raw Valheim convention, making export a straight pass-through. This needs to be *confirmed*, not assumed, before writing an exporter — the cheapest check is round-tripping a real `.blueprint` fixture (e.g. `TestBox_V2.blueprint` from github.com/AugusDogus/Buildheim) and comparing.
+- Effort estimate: roughly a day, not near-free — the traps (origin subtraction, field order, invariant-culture number formatting, prefab name matching) all fail *silently* (loads fine, looks subtly wrong), not with an error.
+
+Supporting `.blueprint` import/export gives instant interop with PlanBuild users and the Valheimians.com blueprint library. High-payoff feature, moderate (not low) effort once the handedness question is settled.
 
 ### Art strategy (resolved)
 
@@ -161,7 +169,7 @@ Findings that corrected the plan's assumptions, for whoever touches the extracto
 2. **Framework preference**: Svelte + Vite. Compiles away at build time, minimal runtime, gives reactive state for the palette/cost-tally/undo bookkeeping without hand-rolled DOM diffing, and avoids the extra integration layer (react-three-fiber) React would need for Three.js.
 3. **MVP piece scope**: wood-tier subset first (~15-20 pieces: floor, wall, roof, pole, stairs, door). Materials mostly reskin the same shapes (box/wedge/cylinder) with flat color, so once shape generators exist for wood tier, adding other materials is mostly more `pieces.json` entries, not a rewrite.
 4. **Structural integrity**: deferred past MVP, consistent with wood-tier-first — ship pure placement (place/rotate/remove, no stability simulation) before adding real support-propagation logic.
-5. **`.vbuild` import/export**: export ships in MVP (near-free — same shape as the scene-state format below, one line per piece). Import is v2 — needs prefab-name mapping and error handling that export doesn't.
+5. **`.blueprint` import/export** (retargeted from `.vbuild` — see "Blueprint interop" above for why): export ships in MVP, roughly a day of work given `PlacedPiece` already matches the needed shape — not near-free, since origin-relative coordinates, field order, and number formatting all need to be right, and the Unity/Three.js handedness question needs confirming first. Import is v2 — needs prefab-name mapping and error handling that export doesn't.
 
 ---
 
@@ -175,14 +183,25 @@ unblocked right now," not a dependency graph to work simultaneously.
 
 **Status as of this session's end:** the app is live and functional —
 https://braidedcable.github.io/valheimdraft-webapp/. You can place, snap,
-rotate, relocate, and delete all 18 MVP wood-tier pieces, with working
-camera controls (orbit, WASD pan, presets). Next actionable items, roughly
-smallest-first: materials cost tally (data's already in `pieces.json`, pure
-UI work), `localStorage` save/load, JSON export/import, `.vbuild` export,
-undo/redo, shareable URL — all detailed under Track B below. Track A has one
-outstanding item verified only by code review, not in-game
-(item 5, `bpcsaveall` automation) — low priority, current data already in
-hand covers what's needed.
+rotate, relocate, and delete all 18 MVP wood-tier pieces, with a live
+materials cost tally, working camera controls (orbit, WASD pan, presets).
+A headless-browser verification harness (`npm run verify`, Playwright +
+Chromium) now exists so UI changes can be checked in this devcontainer
+without deploying first — CI also runs `npm run check` now, not just
+`build`. Next actionable items, roughly smallest-first: `localStorage`
+save/load, JSON export/import, `.blueprint` export (not `.vbuild` — see
+correction below), undo/redo, shareable URL — all detailed under Track B
+below. Track A has one outstanding item verified only by code review, not
+in-game (item 5, `bpcsaveall` automation) — low priority, current data
+already in hand covers what's needed.
+
+**Correction (subagent-driven session, materials-tally + dedupe batch):**
+`.vbuild` was the wrong export target — see "Blueprint interop" and
+"Resolved decisions" below for the full correction. Short version: no
+current tool writes `.vbuild` anymore, PlanBuild upgrades it to
+`.blueprint` on save, and `.blueprint` is a superset (name/category/scale/
+signs/chest contents) that the ecosystem actually reads and writes today.
+Target `.blueprint` when that work starts.
 
 ### Track A — needs Jared's Windows machine
 
@@ -251,8 +270,11 @@ hand covers what's needed.
   directly. Also dedupes the confirmed exact-duplicate-snap-point gap at
   load time (`ashwood_stair`-style duplicates), per the "known extractor
   gaps" note that this belongs in the webapp loader.
-- ~~Scene-state shape~~ Not yet formalized in code (no persistence/`.vbuild`
-  work started), but the decision stands: `{prefab, pos:{x,y,z}, rot:{x,y,z,w}}`.
+- ~~Scene-state shape~~ Formalized as `PlacedPiece` in `src/lib/types.ts`:
+  `{id, prefab, pos:{x,y,z}, rot:{x,y,z,w}}` — `id` is a UI-only
+  `crypto.randomUUID()` key, not part of the exportable shape. Already
+  JSON-clean; persistence/export work builds directly on it, no further
+  formalization needed.
 
 **Shape geometry** (`src/lib/scene/geometry.ts`) — procedural geometry sized
 from each piece's real bounds, flat material-family colors. Final set, all
@@ -356,34 +378,51 @@ this batch — worth remembering whenever the catalog grows past wood tier:
 - Piece palette (`src/lib/PiecePalette.svelte`) is clickable — selects/
   deselects a prefab to place, highlights the active selection.
 
-**Needs the scene-state shape (not placement UX being finished):**
+**Done and verified in-browser (materials-tally + dedupe batch):**
+- Materials cost tally (`src/lib/CostTally.svelte`) — `$derived.by` sum of
+  `getPieceData(prefab).cost` across `placedPieces`, rendered in the
+  `<aside>` below the palette. Verified interactively: placing a Wood Floor
+  updates the tally from "No pieces placed yet." to "2 Wood".
+- Snap-point dedupe (`src/lib/scene/snapping.ts`) — collapses identical
+  (within 1e-5) pos+rot snap-point pairs once at catalog-load time, in the
+  `piecesByPrefab` map that both `snapping.ts` and (indirectly) `Viewport`
+  read through. Resolves the contradiction two entries up in this doc
+  ("dedupes... at load time" vs. "still outstanding") — it's now actually
+  done. No behavior change on the current 18-piece catalog (verified zero
+  duplicates exist today); this is defensive for when the catalog grows.
+- Headless verification harness (`npm run verify`) — see top of Track B
+  status section above.
+
+**Still needs building (persistence family — not yet started):**
 - Save/load to `localStorage`.
 - Export/import as JSON.
-- `.vbuild` export — near-free given the shared state shape.
-- Undo/redo (state snapshots).
+- `.blueprint` export — see "Blueprint interop" correction above; budget
+  ~a day, not near-free, and confirm the Unity/Three.js handedness question
+  before writing the serializer.
+- Undo/redo (state snapshots) — every mutation site is already a whole-array
+  reassignment (`Viewport.svelte`'s move/add/delete, `App.svelte`'s clear),
+  so snapshotting is straightforward; needs a re-entrancy guard so undo's
+  own reassignment doesn't push a new history entry.
 - Shareable URL (encode state in the hash).
-
-**Cost data is in** (`pieces.json` already carries each piece's `cost`
-array) — materials cost tally is now just UI work: sum `cost` across placed
-pieces and render it, no longer blocked on Track A.
 
 **Explicitly deferred past MVP:**
 - Structural integrity simulation (Valheim's beam-support rules).
 - Swapping flat material colors for CC0 tiling textures.
-- `.vbuild` import.
+- `.blueprint` import.
 - Mesh instancing — plain meshes are fine at a wood-tier piece count, and
   instancing complicates per-piece raycast/select/remove. Add it if
   framerate actually becomes a problem.
 
 ### Known extractor gaps
 
-- **Duplicate snap points — confirmed, not yet fixed.** `ashwood_stair` has
-  two exact duplicates — `(0,1,-1)` and `(0,0,1)`, identical position *and*
-  rotation each. Matches the wear-state-subtree theory (the snap-point query
-  matches inactive children too). **Fix belongs in the webapp's loader**
-  (dedupe identical `pos`+`rot` pairs on load), not the extractor — still
-  outstanding, pick it up whenever the piece-loading code gets written
-  (Track B).
+- **Duplicate snap points — fixed in the webapp's loader.** `ashwood_stair`
+  (not in the current wood-tier catalog) had two exact duplicates —
+  `(0,1,-1)` and `(0,0,1)` — matching the wear-state-subtree theory (the
+  snap-point query matches inactive children too). Fixed at
+  `src/lib/scene/snapping.ts`'s catalog-load time (dedupe by pos+rot, 1e-5
+  epsilon), not in the extractor, per the original plan. The current
+  18-piece catalog has zero duplicates, so this was defensive, not a live
+  bug fix — it protects the catalog once it grows past wood tier.
 - **Bounds `center` — fixed and verified.** `PieceData` now carries `center`
   (`bounds.center`) alongside `size`; re-ran the extractor and confirmed
   against `wood_floor` (comes back near-zero, as expected for a symmetric
