@@ -525,6 +525,49 @@ first declared complete):**
   ground-level snapping confirmed unchanged (same `pos.y`, same 2.0-unit
   offset as before the change).
 
+**Done and verified in-browser (rotation control, matching the real
+game's scroll-to-rotate scheme):**
+- Scroll-wheel piece rotation (`src/lib/Viewport.svelte`) — scrolling now
+  rotates the placement ghost by 45° per notch (same increment as the
+  existing R key, which still works too) while a piece is active
+  (selected from the palette, or picked up to relocate); scrolling zooms
+  the camera as before when nothing is active. The tricky part: OrbitControls
+  registers its own `wheel` listener on the same canvas in its
+  constructor, so a naive second listener calling `preventDefault()`
+  would not stop it from also firing — both rotation and zoom would
+  happen together. Fixed by registering the app's own listener in the
+  capture phase (`{ capture: true, passive: false }`) and calling
+  `stopImmediatePropagation()` when a piece is active, which reliably
+  runs before OrbitControls' bubble-phase listener regardless of
+  registration order. A `updateGhostPosition()` helper was extracted out
+  of `handlePointerMove` so the ghost visibly reflects a scroll-triggered
+  rotation immediately, without waiting for the next mouse move (R now
+  benefits from this too, for consistency). Verified numerically via
+  Export JSON: 2 scroll notches → exactly 90° yaw, both via fresh
+  placement and via the pick-up-and-relocate path; confirmed zero camera
+  movement while scrolling with a piece active (bit-for-bit identical
+  camera position before/after); confirmed the ghost updates with zero
+  intervening mouse movement; confirmed idle-scroll zoom and the R key
+  both still work.
+- **A real pre-existing bug found and fixed while adversarially testing
+  the above:** `raycastPlaced()`/`raycastGroundAndPlaced()` could
+  silently miss a piece that was just re-rendered (e.g. right after a
+  deselect, which rebuilds `placedGroup` with fresh mesh instances) if
+  the raycast happened before the next animation frame — Three.js
+  raycasting reads `matrixWorld` directly, and a newly-created/re-added
+  `Object3D`'s `matrixWorld` isn't recomputed until the next render pass,
+  not synchronously. Reproduced directly (not just theorized): picking up
+  a piece immediately after deselecting, with zero intervening mouse
+  movement, intermittently failed to register at all — persisted even
+  with a 100ms wait, which ruled out a simple "just needs more time" race
+  and pointed at matrix staleness specifically. Fixed by forcing
+  `placedGroup.updateMatrixWorld(true)` at the top of both raycast
+  helpers — cheap at wood-tier piece counts, correct regardless of
+  render-loop timing. This bug predates this session's work (both
+  raycast helpers already existed) but directly affected the
+  pickup-then-rotate flow being verified, so it was fixed in place rather
+  than filed separately.
+
 **Everything not yet built from here is tracked in the "Backlog" section
 near the top of this doc, not repeated here.**
 
