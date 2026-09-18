@@ -147,17 +147,36 @@
       pointerNdc.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
     }
 
+    // rebuildPlacedPieces() creates fresh Mesh instances and adds them to
+    // placedGroup, but a newly-added Object3D's matrixWorld isn't
+    // recomputed until the next render pass (normally done inside
+    // renderer.render() during the animate() loop). Raycasting reads
+    // matrixWorld directly, so a raycast that happens synchronously right
+    // after a rebuild — e.g. a pointerup fired immediately after a
+    // rebuild-triggering state change, with no animation frame in
+    // between — can silently miss a piece that's actually right there.
+    // Confirmed by direct reproduction: deselecting (which rebuilds
+    // placedGroup) immediately followed by a pickup click on the very
+    // piece just rendered failed to register a hit until this was added.
+    // Forcing it here is cheap at wood-tier piece counts and correct
+    // regardless of render-loop timing.
+    function ensureFreshMatrices() {
+      placedGroup.updateMatrixWorld(true);
+    }
+
     // Ground + already-placed pieces, sorted by distance from the camera —
     // used to find where the ghost should rest. Combining the two (rather
     // than ground alone) lets the ghost land on top of a placed piece, not
     // just on the ground plane, which is what makes stacking possible.
     function raycastGroundAndPlaced(): THREE.Vector3 | null {
+      ensureFreshMatrices();
       raycaster.setFromCamera(pointerNdc, camera);
       const hits = raycaster.intersectObjects([ground, ...placedGroup.children], false);
       return hits.length > 0 ? hits[0].point.clone() : null;
     }
 
     function raycastPlaced(): THREE.Object3D | null {
+      ensureFreshMatrices();
       raycaster.setFromCamera(pointerNdc, camera);
       const hits = raycaster.intersectObjects(placedGroup.children, false);
       return hits.length > 0 ? hits[0].object : null;
