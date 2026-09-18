@@ -1,0 +1,143 @@
+import { describe, expect, it } from 'vitest';
+import * as THREE from 'three';
+import { snapPosition, snapPositionAlongRay, getPieceData } from './snapping';
+import type { PlacedPiece } from '../types';
+
+// Regression suite for every snap-point disambiguation case discovered
+// empirically (via real browser + Export-JSON testing) across the session
+// that built vertical placement, scroll-wheel rotation, and the ray-based
+// snap fallback. Each case here corresponds to a specific bug report or
+// user-observed behavior — see valheim-planner-plan.md for the full
+// narrative of why each one exists. Pure unit tests against real catalog
+// prefabs (wood_wall_log, wood_pole, wood_floor) — no browser, no camera,
+// no pixel targeting, so these are far more reliable than the throwaway
+// Playwright scripts used to originally diagnose these bugs, and should be
+// extended with new cases as new piece tiers (stone, iron, roofs, stairs)
+// are added, rather than rediscovering the same ambiguity classes by hand
+// each time.
+
+const IDENTITY = new THREE.Quaternion();
+
+function place(prefab: string, pos: THREE.Vector3, rot = IDENTITY): PlacedPiece {
+  return { id: crypto.randomUUID(), prefab, pos: { x: pos.x, y: pos.y, z: pos.z }, rot: { x: rot.x, y: rot.y, z: rot.z, w: rot.w } };
+}
+
+/** Where a piece's root would rest so its bottom touches the ground (y=0). */
+function groundRestY(prefab: string): number {
+  const piece = getPieceData(prefab)!;
+  return piece.bounds.y / 2 - piece.center.y;
+}
+
+describe('catalog sanity', () => {
+  it('wood_wall_log has 4 snap points at both ends and both heights', () => {
+    const piece = getPieceData('wood_wall_log')!;
+    const points = piece.snapPoints.map((sp) => [sp.pos.x, sp.pos.y]).sort();
+    expect(points).toEqual([
+      [-1, -0.25],
+      [-1, 0.25],
+      [1, -0.25],
+      [1, 0.25],
+    ]);
+  });
+
+  it('wood_pole has top and bottom snap points only', () => {
+    const piece = getPieceData('wood_pole')!;
+    expect(piece.snapPoints.map((sp) => sp.pos.y).sort()).toEqual([-0.5, 0.5]);
+  });
+
+  it('wood_floor has 4 corner snap points at a single height', () => {
+    const piece = getPieceData('wood_floor')!;
+    expect(new Set(piece.snapPoints.map((sp) => sp.pos.y)).size).toBe(1);
+    expect(piece.snapPoints).toHaveLength(4);
+  });
+});
+
+describe('snapPosition — plain point-to-point (horizontal, same-height case)', () => {
+  it('snaps two floor tiles corner-to-corner with an exact 2-unit offset', () => {
+    const floorA = place('wood_floor', new THREE.Vector3(0, groundRestY('wood_floor'), 0));
+    // Ghost tentatively near floor A's +x edge, close enough to trigger the snap.
+    const tentative = new THREE.Vector3(1.6, groundRestY('wood_floor'), 0);
+    const result = snapPosition('wood_floor', tentative, IDENTITY, [floorA]);
+    expect(result.x).toBeCloseTo(2, 10);
+    expect(result.y).toBeCloseTo(floorA.pos.y, 10);
+    expect(result.z).toBeCloseTo(0, 10);
+  });
+
+  it('does not snap when nothing is within SNAP_RADIUS', () => {
+    const floorA = place('wood_floor', new THREE.Vector3(0, groundRestY('wood_floor'), 0));
+    const tentative = new THREE.Vector3(10, groundRestY('wood_floor'), 10);
+    const result = snapPosition('wood_floor', tentative, IDENTITY, [floorA]);
+    expect(result.equals(tentative)).toBe(true);
+  });
+});
+
+describe('snapPositionAlongRay — vertical stacking (pole)', () => {
+  it('stacks a pole exactly 1.0 unit above another pole, aiming straight down at its top', () => {
+    const poleA = place('wood_pole', new THREE.Vector3(0, groundRestY('wood_pole'), 0));
+    const targetTop = new THREE.Vector3(0, poleA.pos.y + 0.5, 0); // poleA's top snap point
+    // A straight-down ray aimed exactly at the target — the ordinary "Top"
+    // camera preset case, and the near-vertical degenerate regime.
+    const ray = new THREE.Ray(new THREE.Vector3(0, 20, 0), new THREE.Vector3(0, -1, 0));
+    // Tentative position simulates the raycast falling through to the
+    // ground (missing the pole's thin 0.4x0.4 footprint) — the exact
+    // scenario the ray-based fallback exists for.
+    const tentative = new THREE.Vector3(0, groundRestY('wood_pole'), 0);
+    const result = snapPositionAlongRay('wood_pole', tentative, IDENTITY, [poleA], ray);
+    expect(result.y - poleA.pos.y).toBeCloseTo(1.0, 10);
+    expect(result.x).toBeCloseTo(0, 10);
+    expect(result.z).toBeCloseTo(0, 10);
+  });
+});
+
+describe('snapPositionAlongRay — vertical stacking (wall), thin-target ray fallback', () => {
+  const wallA = place('wood_wall_log', new THREE.Vector3(0, groundRestY('wood_wall_log'), 0));
+
+  it('stacks a wall exactly 0.5 above another wall when the raycast lands on target', () => {
+    const targetTop = new THREE.Vector3(0, wallA.pos.y + 0.25, 0);
+    const ray = new THREE.Ray(new THREE.Vector3(0, 20, 0.001), new THREE.Vector3(0, -1, -0.00005).normalize());
+    const tentative = targetTop.clone(); // raycast landed right on the wall's top surface
+    const result = snapPositionAlongRay('wood_wall_log', tentative, IDENTITY, [wallA], ray);
+    expect(result.y - wallA.pos.y).toBeCloseTo(0.5, 6);
+  });
+
+  it('still stacks correctly when the raycast misses the wall entirely and lands far away', () => {
+    // The measured real-world failure this fallback fixes: aiming near the
+    // wall's top but offset across its narrow 0.55m depth, so the mesh
+    // raycast misses and tentativePos ends up somewhere structurally
+    // unrelated instead (here, displaced far enough that point-to-point
+    // distance alone can't qualify either the top or bottom candidate —
+    // only the ray itself, aimed precisely at the top, can rescue this).
+    const targetTop = new THREE.Vector3(0, wallA.pos.y + 0.25, 0);
+    const ray = new THREE.Ray(new THREE.Vector3(0, 20, 0), targetTop.clone().sub(new THREE.Vector3(0, 20, 0)).normalize());
+    const tentative = new THREE.Vector3(5, groundRestY('wood_wall_log'), 0); // structurally unrelated
+    const result = snapPositionAlongRay('wood_wall_log', tentative, IDENTITY, [wallA], ray);
+    expect(result.y - wallA.pos.y).toBeCloseTo(0.5, 6);
+    expect(result.x).toBeCloseTo(0, 6);
+  });
+});
+
+describe('snapPositionAlongRay — flush end-to-end extension (regression: previously staggered)', () => {
+  it('extends a wall flush at the same height, not staggered by the snap spacing', () => {
+    const wallA = place('wood_wall_log', new THREE.Vector3(0, groundRestY('wood_wall_log'), 0));
+    // Aim level with wallA's +x end, wanting to extend the line — not aiming
+    // above it (which would mean "stack instead").
+    const targetEnd = new THREE.Vector3(1, wallA.pos.y, 0); // roughly mid-height of the end
+    const ray = new THREE.Ray(new THREE.Vector3(10, wallA.pos.y, 5), new THREE.Vector3(-1, 0, -0.5).normalize());
+    const tentative = new THREE.Vector3(2, groundRestY('wood_wall_log'), 0);
+    const result = snapPositionAlongRay('wood_wall_log', tentative, IDENTITY, [wallA], ray);
+    // The core regression check: same Y as wallA, i.e. flush — a staggered
+    // mismatch would come out 0.5 higher or lower.
+    expect(result.y).toBeCloseTo(wallA.pos.y, 6);
+  });
+});
+
+describe('snapPositionAlongRay — no spurious long-range snapping', () => {
+  it('does not snap to a piece far outside RAY_SNAP_REACH', () => {
+    const wallA = place('wood_wall_log', new THREE.Vector3(0, groundRestY('wood_wall_log'), 0));
+    const wallB = place('wood_wall_log', new THREE.Vector3(20, groundRestY('wood_wall_log'), 0));
+    const tentative = new THREE.Vector3(10, groundRestY('wood_wall_log'), 0); // exactly between them, near neither
+    const ray = new THREE.Ray(new THREE.Vector3(10, 20, 0), new THREE.Vector3(0, -1, 0));
+    const result = snapPositionAlongRay('wood_wall_log', tentative, IDENTITY, [wallA, wallB], ray);
+    expect(result.equals(tentative)).toBe(true);
+  });
+});
