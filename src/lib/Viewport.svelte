@@ -163,23 +163,14 @@
       return hits.length > 0 ? hits[0].object : null;
     }
 
-    function handlePointerMove(event: PointerEvent) {
-      updatePointerNdc(event);
-
+    // Repositions/reorients the ghost mesh from the current activePrefab(),
+    // ghostRotationY and pointerNdc — used both by pointer movement and by
+    // anything that changes ghostRotationY without a fresh pointer event
+    // (R key, scroll-wheel rotation), so the ghost visibly updates right
+    // away instead of waiting for the next mousemove.
+    function updateGhostPosition() {
       const prefab = activePrefab();
-
-      if (!prefab) {
-        // Idle: hovering a placed piece previews it as "click to pick up".
-        const hit = raycastPlaced();
-        const id = (hit?.userData.placedId as string | undefined) ?? null;
-        if (id !== hoveredPlacedId) {
-          hoveredPlacedId = id;
-          rebuildPlacedPieces();
-        }
-        return;
-      }
-
-      if (!ghostMesh) return;
+      if (!prefab || !ghostMesh) return;
       const surfaceHit = raycastGroundAndPlaced();
       if (!surfaceHit) return;
 
@@ -203,6 +194,25 @@
       pendingPos = snapped;
       pendingRot = rot;
       positionMesh(ghostMesh, piece, snapped, rot);
+    }
+
+    function handlePointerMove(event: PointerEvent) {
+      updatePointerNdc(event);
+
+      const prefab = activePrefab();
+
+      if (!prefab) {
+        // Idle: hovering a placed piece previews it as "click to pick up".
+        const hit = raycastPlaced();
+        const id = (hit?.userData.placedId as string | undefined) ?? null;
+        if (id !== hoveredPlacedId) {
+          hoveredPlacedId = id;
+          rebuildPlacedPieces();
+        }
+        return;
+      }
+
+      updateGhostPosition();
     }
 
     function commitPending() {
@@ -346,6 +356,7 @@
       }
       if (key === 'r' && activePrefab()) {
         ghostRotationY += Math.PI / 4;
+        updateGhostPosition();
         return;
       }
       const isCtrlOrCmd = event.ctrlKey || event.metaKey;
@@ -371,10 +382,30 @@
       event.preventDefault(); // right click is "cancel", not the browser menu
     }
 
+    // OrbitControls registers its own 'wheel' listener on this same canvas
+    // in its constructor (before this code runs), and calling
+    // preventDefault() inside a second bubble-phase listener would NOT stop
+    // that listener from also firing — both rotation and zoom would happen
+    // together. Registering in the capture phase instead runs this handler
+    // before OrbitControls' bubble-phase one, so stopImmediatePropagation()
+    // here reliably suppresses it. When no piece is active we return
+    // without doing anything, letting OrbitControls' own listener handle
+    // the zoom exactly as before.
+    function handleWheel(event: WheelEvent) {
+      const prefab = activePrefab();
+      if (!prefab) return;
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      const direction = event.deltaY > 0 ? 1 : -1;
+      ghostRotationY += direction * (Math.PI / 4);
+      updateGhostPosition();
+    }
+
     canvas.addEventListener('pointermove', handlePointerMove);
     canvas.addEventListener('pointerdown', handlePointerDown);
     canvas.addEventListener('pointerup', handlePointerUp);
     canvas.addEventListener('contextmenu', handleContextMenu);
+    canvas.addEventListener('wheel', handleWheel, { capture: true, passive: false });
     window.addEventListener('keydown', handleKeyDown);
     window.addEventListener('keyup', handleKeyUp);
 
@@ -442,6 +473,7 @@
       canvas.removeEventListener('pointerdown', handlePointerDown);
       canvas.removeEventListener('pointerup', handlePointerUp);
       canvas.removeEventListener('contextmenu', handleContextMenu);
+      canvas.removeEventListener('wheel', handleWheel, { capture: true });
       renderer.dispose();
     };
   });
@@ -455,9 +487,9 @@
   </div>
   <div class="hint">
     {#if movingPieceId}
-      Click to drop · R to rotate · Right-click to cancel · WASD to pan
+      Click to drop · R or scroll to rotate · Right-click to cancel · WASD to pan
     {:else if selectedPrefab}
-      Click to place · R to rotate · Right-click to cancel · WASD to pan
+      Click to place · R or scroll to rotate · Right-click to cancel · WASD to pan
     {:else}
       Click a piece to move it · middle-click to delete · WASD to pan
     {/if}
