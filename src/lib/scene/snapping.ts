@@ -3,8 +3,42 @@ import piecesData from '../../data/pieces.json';
 import type { PlacedPiece, Quat, Vec3 } from '../types';
 
 export type PieceEntry = (typeof piecesData.pieces)[number];
+type SnapPoint = PieceEntry['snapPoints'][number];
 
-const piecesByPrefab = new Map(piecesData.pieces.map((p) => [p.prefab, p]));
+// The extractor can occasionally emit the same snap point twice for a piece
+// (e.g. captured once per wear-state variant mesh sharing the same
+// transform). Collapse exact (within floating-point noise) pos+rot
+// duplicates so downstream consumers never see or search redundant points.
+const DEDUPE_EPSILON = 1e-5;
+
+function snapPointsEqual(a: SnapPoint, b: SnapPoint): boolean {
+  return (
+    Math.abs(a.pos.x - b.pos.x) < DEDUPE_EPSILON &&
+    Math.abs(a.pos.y - b.pos.y) < DEDUPE_EPSILON &&
+    Math.abs(a.pos.z - b.pos.z) < DEDUPE_EPSILON &&
+    Math.abs(a.rot.x - b.rot.x) < DEDUPE_EPSILON &&
+    Math.abs(a.rot.y - b.rot.y) < DEDUPE_EPSILON &&
+    Math.abs(a.rot.z - b.rot.z) < DEDUPE_EPSILON &&
+    Math.abs(a.rot.w - b.rot.w) < DEDUPE_EPSILON
+  );
+}
+
+function dedupeSnapPoints(snapPoints: SnapPoint[]): SnapPoint[] {
+  const deduped: SnapPoint[] = [];
+  for (const sp of snapPoints) {
+    if (!deduped.some((existing) => snapPointsEqual(existing, sp))) {
+      deduped.push(sp);
+    }
+  }
+  return deduped;
+}
+
+// Dedupe once up front (piece count is small and this map is built exactly
+// once at module load), so every later lookup via getPieceData already
+// returns a clean, duplicate-free snapPoints array.
+const piecesByPrefab = new Map(
+  piecesData.pieces.map((p) => [p.prefab, { ...p, snapPoints: dedupeSnapPoints(p.snapPoints) }])
+);
 
 export function getPieceData(prefab: string): PieceEntry | undefined {
   return piecesByPrefab.get(prefab);
