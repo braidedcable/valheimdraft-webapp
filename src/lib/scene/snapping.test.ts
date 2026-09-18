@@ -119,15 +119,77 @@ describe('snapPositionAlongRay — vertical stacking (wall), thin-target ray fal
 describe('snapPositionAlongRay — flush end-to-end extension (regression: previously staggered)', () => {
   it('extends a wall flush at the same height, not staggered by the snap spacing', () => {
     const wallA = place('wood_wall_log', new THREE.Vector3(0, groundRestY('wood_wall_log'), 0));
-    // Aim level with wallA's +x end, wanting to extend the line — not aiming
-    // above it (which would mean "stack instead").
-    const targetEnd = new THREE.Vector3(1, wallA.pos.y, 0); // roughly mid-height of the end
-    const ray = new THREE.Ray(new THREE.Vector3(10, wallA.pos.y, 5), new THREE.Vector3(-1, 0, -0.5).normalize());
-    const tentative = new THREE.Vector3(2, groundRestY('wood_wall_log'), 0);
+    // A realistic scenario: the user hovers near wallA's +x end at ground
+    // level (a real ground raycast naturally lands close to, not exactly
+    // on, the flush position) with a plausible oblique camera ray, roughly
+    // level — not tilted toward stacking above/below. A wall's 4 symmetric
+    // corner snap points make PURE ray-only disambiguation (tentativePos
+    // contributing nothing) genuinely ambiguous between flush-extend,
+    // stack-above, and stack-below when aimed exactly at one corner — that
+    // isn't a bug, real usage always has a real tentativePos too, which is
+    // why this test includes one rather than testing the ray in isolation.
+    const tentative = new THREE.Vector3(1.8, wallA.pos.y, 0.1);
+    const cameraPos = new THREE.Vector3(8, 6, 8);
+    const aimPoint = new THREE.Vector3(2, wallA.pos.y, 0.1);
+    const ray = new THREE.Ray(cameraPos, aimPoint.clone().sub(cameraPos).normalize());
     const result = snapPositionAlongRay('wood_wall_log', tentative, IDENTITY, [wallA], ray);
-    // The core regression check: same Y as wallA, i.e. flush — a staggered
-    // mismatch would come out 0.5 higher or lower.
+    // The core regression check: exactly 2 units over (flush extension),
+    // same Y as wallA — checking BOTH matters. A staggered mismatch would
+    // keep x=2 but shift y by 0.5; the degenerate same-side pairing fixed
+    // below would keep y correct but put x at 0 (full overlap with wallA).
+    // An assertion on y alone would miss that second failure mode, which is
+    // exactly what happened when this test was first written.
+    expect(result.x).toBeCloseTo(2, 6);
     expect(result.y).toBeCloseTo(wallA.pos.y, 6);
+    expect(result.z).toBeCloseTo(0, 6);
+  });
+});
+
+describe('snapPositionAlongRay — far-end reach (regression: long pieces couldn\'t reach via their far end)', () => {
+  it('connects the FAR end of a new wall to a distant target, extending away rather than overlapping', () => {
+    // wallA far from the ghost's raw raycast position, simulating: the user
+    // is building elsewhere (tentativePos near the origin, unrelated), but
+    // aims their cursor/ray across open space at wallA specifically,
+    // wanting the new wall's FAR end to reach it while the wall's bulk
+    // extends away in the opposite direction.
+    const wallA = place('wood_wall_log', new THREE.Vector3(10, groundRestY('wood_wall_log'), 10));
+    const target = new THREE.Vector3(9, wallA.pos.y + 0.25, 10); // wallA's local -1 (left) end
+    const tentative = new THREE.Vector3(0, groundRestY('wood_wall_log'), 0); // raw raycast, unrelated
+    const ray = new THREE.Ray(new THREE.Vector3(-5, 15, 10), target.clone().sub(new THREE.Vector3(-5, 15, 10)).normalize());
+    const result = snapPositionAlongRay('wood_wall_log', tentative, IDENTITY, [wallA], ray);
+    // Must extend AWAY from wallA (x=8, the complementary/correct pairing),
+    // not overlap it (x=10, the same-side/degenerate pairing this test
+    // would also catch regressing).
+    expect(result.x).toBeCloseTo(8, 6);
+    expect(result.distanceTo(new THREE.Vector3(wallA.pos.x, wallA.pos.y, wallA.pos.z))).toBeGreaterThan(1);
+  });
+});
+
+describe('snapPositionAlongRay — degenerate same-side pairing exclusion', () => {
+  it('never returns a position that exactly coincides with the piece being connected to', () => {
+    // Regardless of camera angle, connecting via the SAME-side local offset
+    // as the target (rather than the complementary one) places the new
+    // piece exactly on top of the existing one — never a valid result.
+    // Swept across several distinct ray angles aimed at the same target,
+    // since this was originally found to depend on ray geometry (some
+    // angles scored the degenerate candidate as "closer" than the correct
+    // one before this exclusion existed).
+    const wallA = place('wood_wall_log', new THREE.Vector3(10, groundRestY('wood_wall_log'), 10));
+    const target = new THREE.Vector3(9, wallA.pos.y + 0.25, 10);
+    const tentative = new THREE.Vector3(0, groundRestY('wood_wall_log'), 0);
+    const origins = [
+      new THREE.Vector3(0, 15, 0),
+      new THREE.Vector3(5, 20, 20),
+      new THREE.Vector3(9, 20, 0),
+      new THREE.Vector3(-5, 15, 10),
+      new THREE.Vector3(20, 15, 10),
+    ];
+    for (const origin of origins) {
+      const ray = new THREE.Ray(origin, target.clone().sub(origin).normalize());
+      const result = snapPositionAlongRay('wood_wall_log', tentative, IDENTITY, [wallA], ray);
+      const distanceFromWallA = result.distanceTo(new THREE.Vector3(wallA.pos.x, wallA.pos.y, wallA.pos.z));
+      expect(distanceFromWallA).toBeGreaterThan(0.05);
+    }
   });
 });
 

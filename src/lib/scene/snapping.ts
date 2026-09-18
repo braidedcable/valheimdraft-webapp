@@ -203,6 +203,12 @@ const RAY_NEAR_VERTICAL_THRESHOLD = 0.01;
 // distant target point) and shouldn't be overridden by the tie-break.
 const NEAR_VERTICAL_TIE_EPSILON = 0.05;
 
+// See the exclusion check inside the main loop below for the full
+// reasoning: a candidate whose position (nearly) exactly coincides with an
+// already-placed piece is a same-side/degenerate pairing, never a valid
+// connection, regardless of how it scores on ray or center distance.
+const DEGENERATE_OVERLAP_EPSILON = 0.05;
+
 export function snapPositionAlongRay(
   prefab: string,
   tentativePos: THREE.Vector3,
@@ -244,6 +250,29 @@ export function snapPositionAlongRay(
         if (pointDist >= SNAP_RADIUS && rayDist >= RAY_SNAP_REACH) continue;
 
         const candidatePos = targetPoint.clone().sub(localOffset);
+
+        // A piece can have more than one snap point along the same local
+        // axis (e.g. a wall's two ends). Pairing the ghost's offset with a
+        // target on the SAME side — rather than the complementary side that
+        // actually continues the line — makes candidatePos land exactly on
+        // the target piece's own root position: total positional overlap,
+        // not a connection. Found empirically (not by inspection): for
+        // several reasonable camera/ray angles reaching toward a distant
+        // target, this exact-overlap candidate's center legitimately scored
+        // closer to the ray than the correct, non-overlapping one, and
+        // nothing was excluding it. A hard exclusion, not a scoring input —
+        // ray/center distance are legitimate signals for "which real
+        // connection did you mean," but "does this candidate erase an
+        // existing piece" isn't a matter of degree. Checked against every
+        // placed piece, not just the one owning targetPoint, since the
+        // resulting position could just as easily coincide with a
+        // different, unrelated piece. 0.05 units is comfortably below any
+        // real snap-point-to-root offset in the current catalog (smallest
+        // is wood_pole's 0.5) so it only ever catches genuine coincidence.
+        if (placedPieces.some((p) => candidatePos.distanceTo(toVector3(p.pos)) < DEGENERATE_OVERLAP_EPSILON)) {
+          continue;
+        }
+
         const candidateCenter = candidatePos.clone().add(rotatedCenter);
         const centerDist = ray.distanceToPoint(candidateCenter);
 
