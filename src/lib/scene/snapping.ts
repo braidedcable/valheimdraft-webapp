@@ -111,10 +111,6 @@ export function snapPosition(
 // fix).
 const RAY_SNAP_REACH = 1.5;
 
-// Tolerance for comparing overlap amounts when picking between candidates —
-// pure floating-point noise shouldn't flip which pairing "wins".
-const OVERLAP_EPSILON = 1e-6;
-
 /**
  * Ray-aware variant of snapPosition(), for use when the ghost's tentative
  * position comes from a raycast that may have missed a thin target piece's
@@ -134,18 +130,62 @@ const OVERLAP_EPSILON = 1e-6;
  * points should mate with it — e.g. a wall's top and bottom end points sit
  * at the same (x, z), so a top-down aiming ray can't tell them apart, and
  * neither can tentativePos once it's already wrong in Y (that's exactly the
- * bug this function exists to fix). Instead of picking "whichever pairing
- * lands closest to tentativePos" (which would just re-select the same wrong
- * height), every qualifying pairing is scored primarily by how little the
- * ghost's resulting vertical extent overlaps the target piece's vertical
- * extent — i.e. prefer placements that sit against the target piece rather
- * than back inside it — then by proximity, and finally (since a straight-down
- * aiming ray genuinely cannot distinguish "stack on top" from "stack
- * underneath" a thin target — both are equally close to a perfectly vertical
- * ray, and floating-point noise alone shouldn't decide between them) by
- * preferring the higher of two otherwise-tied candidates, matching the
- * ordinary "build upward" expectation.
+ * bug this function exists to fix). Rather than inferring intent from
+ * abstract properties of a candidate (e.g. how much it overlaps the target
+ * vertically), every qualifying pairing is scored by the one signal that
+ * directly reflects what the user is aiming at: how close the piece's
+ * resulting *visual center* (root + rotated piece.center, exactly as
+ * Viewport.svelte's positionMesh() renders it) would land to the aiming ray
+ * itself. Smaller wins. This one rule naturally distinguishes "aiming above
+ * a piece" (stack on top — the true center of the stacked placement sits
+ * near the continuing ray) from "aiming level with a piece's end" (extend
+ * flush — the flush candidate's center sits near the ray, while a
+ * mismatched/staggered candidate's center does not), with no special-casing
+ * of either scenario.
+ *
+ * One case this center-distance metric genuinely cannot resolve on its own:
+ * when the aiming ray is (close to) perfectly vertical — the ordinary case
+ * for the "Top" camera preset aimed anywhere near screen center — candidates
+ * that sit directly above vs. directly below the same point are, by
+ * construction, both essentially ON that vertical line, so their distances
+ * to the ray come out nearly identical (differing only by camera-model
+ * floating-point noise, not by any real signal). That's the exact
+ * degeneracy the removed algorithm's own comments already called out
+ * ("a straight-down aiming ray genuinely cannot distinguish stack on top
+ * from stack underneath a thin target"); it's a property of the ray's
+ * geometry, not of piece overlap, so resolving it doesn't need overlap math
+ * — just the same "build upward" tie-break the old code already reached
+ * for as its own last resort. Confirmed empirically (see PR notes): without
+ * this, straight-down stacking picks the wrong candidate roughly half the
+ * time, purely on floating-point noise. Detected directly from the ray's
+ * own shape (its horizontal-plane direction is ~0), not by comparing
+ * scores, so it only ever engages in this specific near-vertical-aim
+ * regime and never interferes with the ordinary (non-degenerate) scoring
+ * used for every other camera angle or off-center aim — including the
+ * flush wall-extension case above, where the ray's real horizontal slope
+ * already carries a genuine, non-degenerate signal.
  */
+// Below this, the ray's own direction is treated as "(near) perfectly
+// vertical" — the degenerate aiming case described above, where distance-
+// to-candidate-center carries no real disambiguating signal at all (any
+// difference is floating-point noise from the camera/projection math, not
+// a genuine "closer to where the user is pointing" signal). Comfortably
+// above ordinary floating-point noise, and comfortably below the smallest
+// real horizontal tilt produced by an off-center aim under any of this
+// app's camera presets (measured empirically: a dead-center "Top" aim
+// produces a horizontal ray-direction magnitude on the order of 1e-4–1e-3,
+// while an aim even slightly off-axis — e.g. at another piece's snap point
+// a couple of units from screen center — already produces ~1e-2 or more).
+const RAY_NEAR_VERTICAL_THRESHOLD = 0.01;
+
+// Once the ray is confirmed near-vertical, candidates whose scores are
+// within this much of each other are the genuinely-tied ones the
+// degeneracy above describes (empirically, that tie's score gap is on the
+// order of 1e-4 or smaller); candidates farther apart than this still
+// differ for real reasons (e.g. belonging to an entirely different, more
+// distant target point) and shouldn't be overridden by the tie-break.
+const NEAR_VERTICAL_TIE_EPSILON = 0.05;
+
 export function snapPositionAlongRay(
   prefab: string,
   tentativePos: THREE.Vector3,
@@ -157,17 +197,19 @@ export function snapPositionAlongRay(
   if (!piece || piece.snapPoints.length === 0 || placedPieces.length === 0) return tentativePos;
 
   const ghostLocalOffsets = piece.snapPoints.map((sp) => toVector3(sp.pos).applyQuaternion(rot));
+  const rotatedCenter = toVector3(piece.center).applyQuaternion(rot);
+
+  const rayIsNearVertical =
+    ray.direction.x * ray.direction.x + ray.direction.z * ray.direction.z <
+    RAY_NEAR_VERTICAL_THRESHOLD * RAY_NEAR_VERTICAL_THRESHOLD;
 
   let bestPos: THREE.Vector3 | null = null;
-  let bestOverlap = Infinity;
-  let bestDist = Infinity;
-  let bestY = -Infinity;
+  let bestCenterDist = Infinity;
+  let bestCenterY = -Infinity;
 
   for (const placed of placedPieces) {
     const ownerPiece = getPieceData(placed.prefab);
     if (!ownerPiece) continue;
-    const ownerYMin = placed.pos.y + ownerPiece.center.y - ownerPiece.bounds.y / 2;
-    const ownerYMax = placed.pos.y + ownerPiece.center.y + ownerPiece.bounds.y / 2;
 
     for (const targetPoint of worldSnapPoints(placed)) {
       // ray.distanceToPoint() is correctly clamped to the forward half-line
@@ -184,22 +226,24 @@ export function snapPositionAlongRay(
         if (pointDist >= SNAP_RADIUS && rayDist >= RAY_SNAP_REACH) continue;
 
         const candidatePos = targetPoint.clone().sub(localOffset);
-        const candYMin = candidatePos.y + piece.center.y - piece.bounds.y / 2;
-        const candYMax = candidatePos.y + piece.center.y + piece.bounds.y / 2;
-        const overlap = Math.max(0, Math.min(ownerYMax, candYMax) - Math.max(ownerYMin, candYMin));
-        const dist = Math.min(pointDist, rayDist);
+        const candidateCenter = candidatePos.clone().add(rotatedCenter);
+        const centerDist = ray.distanceToPoint(candidateCenter);
 
-        const overlapTied = Math.abs(overlap - bestOverlap) <= OVERLAP_EPSILON;
-        const distTied = Math.abs(dist - bestDist) <= OVERLAP_EPSILON;
-        const better =
-          overlap < bestOverlap - OVERLAP_EPSILON ||
-          (overlapTied && dist < bestDist - OVERLAP_EPSILON) ||
-          (overlapTied && distTied && candidatePos.y > bestY);
-        if (!bestPos || better) {
+        let better: boolean;
+        if (!bestPos) {
+          better = true;
+        } else if (rayIsNearVertical && Math.abs(centerDist - bestCenterDist) <= NEAR_VERTICAL_TIE_EPSILON) {
+          // Genuinely tied under a near-vertical aim: fall back to "build
+          // upward" rather than let camera-math noise decide.
+          better = candidateCenter.y > bestCenterY;
+        } else {
+          better = centerDist < bestCenterDist;
+        }
+
+        if (better) {
           bestPos = candidatePos;
-          bestOverlap = overlap;
-          bestDist = dist;
-          bestY = candidatePos.y;
+          bestCenterDist = centerDist;
+          bestCenterY = candidateCenter.y;
         }
       }
     }
