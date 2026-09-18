@@ -1,6 +1,7 @@
 <script lang="ts">
   import Viewport from './lib/Viewport.svelte';
   import PiecePalette from './lib/PiecePalette.svelte';
+  import CostTally from './lib/CostTally.svelte';
   import Attribution from './lib/Attribution.svelte';
   import type { PlacedPiece } from './lib/types';
 
@@ -31,6 +32,7 @@
     {:else}
       <aside>
         <PiecePalette bind:selectedPrefab />
+        <CostTally {placedPieces} />
       </aside>
       <div class="viewport-wrap">
         <Viewport bind:selectedPrefab bind:placedPieces />
