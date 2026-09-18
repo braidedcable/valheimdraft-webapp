@@ -2,7 +2,7 @@
 
 ## Context
 
-Build a browser-based interactive Valheim building simulator, hosted on GitHub Pages, where a user can place buildable pieces (walls, beams, roofs, floors, etc.) to design bases. This document started as **Phase 0** — an asset-availability investigation the user asked for up front — and has since grown to cover the full MVP build. MVP was briefly declared complete, then **reopened** with one added requirement — vertical (Y-axis) placement/snapping, since ground-plane-only placement doesn't hold up as a building simulator — see "MVP status: REOPENED" below. Everything past that point is tracked in "Backlog" as deliberately deferred, low-priority work, not abandoned or forgotten.
+Build a browser-based interactive Valheim building simulator, hosted on GitHub Pages, where a user can place buildable pieces (walls, beams, roofs, floors, etc.) to design bases. This document started as **Phase 0** — an asset-availability investigation the user asked for up front — and has since grown to cover the full MVP build. **MVP is complete**, including vertical (Y-axis) placement/snapping added after an initial completion pass missed it — see "MVP status: COMPLETE (again)" below. Everything past that point is tracked in "Backlog" as deliberately deferred, low-priority work, not abandoned or forgotten.
 
 ## Project ground rules (committed)
 
@@ -180,49 +180,49 @@ Findings that corrected the plan's assumptions, for whoever touches the extracto
 
 ---
 
-## MVP status: REOPENED — vertical placement/snapping added as a new MVP item
+## MVP status: COMPLETE (again)
 
-Was declared complete; reopened by explicit user request to add one more
-required item before MVP actually counts as done, because the gap is
-fundamental to the "building simulator" premise, not a nice-to-have:
+Was declared complete, reopened to add vertical placement/snapping as a
+required item, now done, merged, and verified:
 
-**6. Vertical (Y-axis) placement and snapping — required, not yet built.**
-Every piece placement today is locked to the ground plane; there is no way
-to build a second story, stack poles, or place a wall on top of another
-wall. Root cause, confirmed by reading the code and the data (not guessed):
-- `Viewport.svelte`'s `handlePointerMove` raycasts **only** against the flat
-  ground mesh (`raycastGround()`, intersecting `ground` alone — placed
-  pieces are never included in that raycast) and then hardcodes the
-  tentative Y to rest on the ground (`piece.bounds.y / 2 - piece.center.y`),
-  regardless of where the cursor is or what's underneath it.
-- `snapPosition()` in `snapping.ts` itself has **no axis restriction** — it
-  already searches all pairs of ghost/placed snap points in full 3D and
-  snaps within a 1.0-unit radius. It structurally already supports
-  vertical connections.
-- The piece data already carries top/bottom snap points at different
-  heights — confirmed directly: `wood_pole` has snap points at y=+0.5 and
-  y=-0.5 (its own 1m height), `wood_wall_log` at y=+0.25/-0.25. So the data
-  and the matching algorithm are both ready; only the *ghost's starting
-  position* is wrong. A tentative position computed by always resting on
-  the ground can never land within 1.0 units of a snap point that's 1–3m
-  up on top of an already-placed piece, so vertical snapping can never
-  trigger today no matter how carefully you aim.
-- **The fix**: extend the placement raycast to also hit already-placed
-  pieces (the same `placedGroup.children` `raycastPlaced()` already uses
-  for pick-up/delete), and when that raycast — not the ground — is the
-  hit, compute the tentative Y from that piece's surface instead of from
-  the ground. That gets the tentative position close enough for the
-  existing, already-correct 3D snap search to find and lock onto the right
-  upper/lower snap-point pair. No changes needed to `snapping.ts` or to
-  `pieces.json`.
-- Scope note: this is squarely a `Viewport.svelte` placement-logic change,
-  isolated from persistence/undo/share (Wave 2) and the `.blueprint`
-  question (backlog) — safe to plan and build independently of either.
+**6. Vertical (Y-axis) placement and snapping — done.** Every piece
+placement was locked to the ground plane; there was no way to build a
+second story, stack poles, or place a wall on top of another wall.
+Root cause (confirmed by reading the code and the data, not guessed): the
+ghost's tentative position always came from a raycast against the flat
+ground mesh only, with Y hardcoded to rest at ground level regardless of
+where the cursor pointed. `snapPosition()`'s 3D snap search and the piece
+data's own top/bottom snap points (e.g. `wood_pole` at y=±0.5) were already
+correct and complete — the ghost just never got close enough to a stacked
+snap point to trigger it.
+
+**The fix** (`src/lib/Viewport.svelte` only, `snapping.ts`/`pieces.json`
+untouched, as scoped): the ghost-positioning raycast now hits the ground
+*and* already-placed pieces together (`raycastGroundAndPlaced()`, sorted by
+distance so the nearest surface wins), and the tentative Y comes from
+whatever surface was actually hit instead of always assuming 0. For a
+ground hit this is numerically identical to the old formula (no
+regression); for a piece-surface hit it lands within the existing
+snap-search radius and locks onto the real pair. `raycastPlaced()` (used
+for hover/delete/pickup) was left untouched.
+
+**Verified two ways, not just visually:**
+- Numerically, via the app's own Export JSON (exact `pos.y` values, not a
+  screenshot guess): stacking two `Wood Pole (1m)` pieces produced a
+  vertical delta of exactly `1.0` with zero horizontal drift; a third pole
+  stacked via the pick-up-and-move path (not just fresh placement) landed
+  another exact `1.0` on top of that. Horizontal ground-level snapping
+  (two `Wood Floor` tiles) was unchanged — same Y, same 2.0-unit offset as
+  before.
+- Adversarially, by placing a piece on open ground *near* (not on top of)
+  an unrelated tall piece, confirming it still rests at the normal
+  ground-level height with no spurious upward snap — the fix doesn't make
+  nearby tall pieces "magnetic."
 
 Everything else from the original MVP scope remains done, deployed, and
-verified — this is the one open item before MVP is complete again:
+verified:
 
-- Place, snap, rotate, relocate, delete all 18 wood-tier pieces (decision 3) — ground-plane-only, per the gap above.
+- Place, snap, rotate, relocate, delete all 18 wood-tier pieces (decision 3), now including vertical stacking.
 - Materials cost tally.
 - Persistence: `localStorage` autosave, JSON export/import, shareable URL links.
 - Full undo/redo.
@@ -251,9 +251,9 @@ Jared's at that machine; Track B proceeds regardless. Within Track B nothing
 is truly parallel — it's a solo project — so the grouping below is "what's
 unblocked right now," not a dependency graph to work simultaneously.
 
-**Status:** MVP reopened, one item open (vertical placement/snapping) — see
-"MVP status: REOPENED" near the top of this doc for the technical detail,
-and "Backlog" for what's separately deferred and why. A
+**Status:** MVP complete, including vertical placement/snapping — see
+"MVP status: COMPLETE (again)" near the top of this doc for the technical
+detail, and "Backlog" for what's separately deferred and why. A
 headless-browser verification harness (`npm run verify`, Playwright +
 Chromium) now exists so UI changes can be checked in this devcontainer
 without deploying first — CI also runs `npm run check` now, not just
@@ -507,6 +507,23 @@ above):**
   reliably completes before gzip decompression resolves) — no code change
   was needed, but it was verified rather than trusted from the agent's
   report alone.
+
+**Done and verified in-browser (vertical placement, added after MVP was
+first declared complete):**
+- Vertical (Y-axis) placement and snapping (`src/lib/Viewport.svelte`) —
+  see "MVP status: COMPLETE (again)" near the top of this doc for the full
+  root-cause and fix writeup. In short: the placement raycast now targets
+  the ground *and* already-placed pieces together instead of the ground
+  alone, so the ghost's tentative height reflects whatever's actually under
+  the cursor — which was the only missing piece, since `snapPosition()`'s
+  3D search and the piece data's own top/bottom snap points were already
+  correct. Verified numerically via the app's own Export JSON (exact
+  `pos.y` deltas of `1.0` stacking `Wood Pole` pieces, both via fresh
+  placement and via picking up and moving an existing piece), and
+  adversarially (placing near, not on, an unrelated tall piece still rests
+  at normal ground height — no spurious magnetic snapping). Horizontal
+  ground-level snapping confirmed unchanged (same `pos.y`, same 2.0-unit
+  offset as before the change).
 
 **Everything not yet built from here is tracked in the "Backlog" section
 near the top of this doc, not repeated here.**
