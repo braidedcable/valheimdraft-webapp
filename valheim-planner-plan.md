@@ -568,6 +568,58 @@ game's scroll-to-rotate scheme):**
   pickup-then-rotate flow being verified, so it was fixed in place rather
   than filed separately.
 
+**Done and verified in-browser (vertical-snap reliability — user-reported
+"stacking works but snapping to the upper points feels unreliable"):**
+- **Diagnosis, measured directly rather than guessed:** `SNAP_RADIUS`
+  (1.0 world units, in `src/lib/scene/snapping.ts`) was not the problem —
+  placing a `Wood Wall (Log)` (2.44m × 0.55m deep × 0.53m tall, snap
+  points at local y=±0.25) and offsetting the second placement in small
+  pixel increments showed every offset that landed on the wall's *own
+  surface* snapped to an exact 0.500 delta; the failure was that the
+  wall's 0.55m depth is a thin raycast target — miss it by more than
+  roughly half that depth and the raycast falls straight through to the
+  ground, a full piece-height below the real connection point, which no
+  radius increase could bridge without also risking false-positive snaps
+  to unrelated ground-level pieces.
+- **Fix**: `snapPositionAlongRay()` (`src/lib/scene/snapping.ts`) —
+  independent of whether the raycast hit the target piece's mesh, it
+  finds the closest real snap point to the *aiming ray itself*
+  (`THREE.Ray.distanceToPoint()`, independently verified to correctly
+  clamp to the forward half-line — a point behind the ray reports
+  distance-to-origin, not a false near-zero from treating the ray as an
+  infinite line) within a new, more generous `RAY_SNAP_REACH` (1.5 world
+  units — deliberately separate from `SNAP_RADIUS`, which still governs
+  the reliable point-to-point case once a good tentative position
+  exists). `Viewport.svelte`'s `updateGhostPosition()` now calls this
+  instead of the plain `snapPosition()` (kept, unchanged, still exported).
+  This matches how the real game's own snap system works: it detects
+  nearby connection points around where you're aiming, not "did your ray
+  hit this exact triangle."
+- **A real design flaw caught mid-implementation, not shipped:** the
+  initial proposed disambiguator (for pieces with multiple snap points at
+  the same x/z but different heights, e.g. a wall's top vs. bottom —
+  which a straight-down ray can't tell apart) was "pick whichever pairing
+  lands closest to the raycast-based tentative position" — but
+  `tentativePos.y` is exactly the untrustworthy value this fix exists to
+  correct, so that scheme would have systematically preferred re-embedding
+  the new piece at the *same* height as the target over actually stacking
+  on it. Replaced with: rank candidates by how little the new piece's
+  vertical extent would overlap the target's (prefer sitting flush against
+  it over sinking into it), then by proximity, then — since "on top" and
+  "underneath" are equally close to a perfectly vertical ray — prefer the
+  higher of two tied candidates, matching the ordinary build-upward
+  expectation.
+- **Verified numerically** (Export JSON, not screenshots): the reported
+  failure case (a wall placed ~20px off-center across the target wall's
+  depth) reproduced exactly on unmodified `main` (delta ≈0, no stack) and
+  now snaps correctly (delta exactly 0.500); the effective forgiveness
+  extends to ~44px of depth-offset before correctly giving up (~46px+)
+  rather than snapping unboundedly; horizontal floor-to-floor snapping is
+  unchanged (exact 2.0-unit offset, same height); two pieces placed
+  ~15 units apart don't spuriously cross-snap; vertical pole-stacking and
+  scroll-wheel rotation (both from the immediately preceding session)
+  remain unaffected.
+
 **Everything not yet built from here is tracked in the "Backlog" section
 near the top of this doc, not repeated here.**
 
