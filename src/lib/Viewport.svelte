@@ -147,9 +147,13 @@
       pointerNdc.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
     }
 
-    function raycastGround(): THREE.Vector3 | null {
+    // Ground + already-placed pieces, sorted by distance from the camera —
+    // used to find where the ghost should rest. Combining the two (rather
+    // than ground alone) lets the ghost land on top of a placed piece, not
+    // just on the ground plane, which is what makes stacking possible.
+    function raycastGroundAndPlaced(): THREE.Vector3 | null {
       raycaster.setFromCamera(pointerNdc, camera);
-      const hits = raycaster.intersectObject(ground);
+      const hits = raycaster.intersectObjects([ground, ...placedGroup.children], false);
       return hits.length > 0 ? hits[0].point.clone() : null;
     }
 
@@ -176,16 +180,20 @@
       }
 
       if (!ghostMesh) return;
-      const groundHit = raycastGround();
-      if (!groundHit) return;
+      const surfaceHit = raycastGroundAndPlaced();
+      if (!surfaceHit) return;
 
       const piece = getPieceData(prefab)!;
       const rot = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), ghostRotationY);
-      // Rest the piece's true mesh bottom on the ground. A pure-yaw
-      // rotation leaves Y unchanged, so center.y is still a valid vertical
-      // offset post-rotation.
-      const tentativePos = groundHit.clone();
-      tentativePos.y = piece.bounds.y / 2 - piece.center.y;
+      // Rest the piece's true mesh bottom on whichever surface the cursor
+      // is actually over — the ground (hitPoint.y ~= 0, same as before) or
+      // a placed piece's mesh (hitPoint.y = that surface's real height).
+      // Either way this only needs to land within SNAP_RADIUS of the real
+      // snap point for snapPosition() below to lock onto it exactly. A
+      // pure-yaw rotation leaves Y unchanged, so center.y is still a valid
+      // vertical offset post-rotation.
+      const tentativePos = surfaceHit.clone();
+      tentativePos.y = surfaceHit.y + piece.bounds.y / 2 - piece.center.y;
 
       // Exclude the piece currently being moved from its own snap targets
       // — otherwise it'd snap to its own pre-move position.
