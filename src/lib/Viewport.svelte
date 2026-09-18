@@ -7,9 +7,11 @@
   import { getPieceData, snapPosition, type PieceEntry } from './scene/snapping';
   import type { PlacedPiece } from './types';
 
-  let { selectedPrefab = $bindable(null), placedPieces = $bindable([]) }: {
+  let { selectedPrefab = $bindable(null), placedPieces = $bindable([]), onUndo, onRedo }: {
     selectedPrefab: string | null;
     placedPieces: PlacedPiece[];
+    onUndo: () => void;
+    onRedo: () => void;
   } = $props();
 
   let canvas: HTMLCanvasElement;
@@ -314,6 +316,20 @@
     const panKeys = new Set<string>();
     const PAN_SPEED = 10; // world units per second
 
+    // An undo/redo firing while a piece is picked up for moving (ghost
+    // following the cursor, not yet dropped) would otherwise leave a stray
+    // ghost referencing a piece whose position/existence the history
+    // navigation just changed underneath it. Rather than trying to make
+    // that combination coherent, we just cancel the in-progress move first
+    // — undoing/redoing the committed history, plus a dangling pick-up, is
+    // more confusing than requiring the user to re-pick-up the piece.
+    function cancelMoveForHistoryNav() {
+      if (movingPieceId) {
+        movingPieceId = null;
+        rebuildPlacedPieces(); // the piece being moved reappears
+      }
+    }
+
     function handleKeyDown(event: KeyboardEvent) {
       const key = event.key.toLowerCase();
       if (key === 'w' || key === 'a' || key === 's' || key === 'd') {
@@ -322,6 +338,20 @@
       }
       if (key === 'r' && activePrefab()) {
         ghostRotationY += Math.PI / 4;
+        return;
+      }
+      const isCtrlOrCmd = event.ctrlKey || event.metaKey;
+      if (isCtrlOrCmd && key === 'z') {
+        event.preventDefault();
+        cancelMoveForHistoryNav();
+        if (event.shiftKey) onRedo();
+        else onUndo();
+        return;
+      }
+      if (isCtrlOrCmd && key === 'y') {
+        event.preventDefault();
+        cancelMoveForHistoryNav();
+        onRedo();
       }
     }
 

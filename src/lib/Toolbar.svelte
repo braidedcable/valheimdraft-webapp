@@ -2,9 +2,20 @@
   import type { PlacedPiece } from './types';
   import { serialize, deserialize } from './persistence';
 
-  let { placedPieces = $bindable(), showAttribution = $bindable() }: {
+  let {
+    placedPieces = $bindable(),
+    showAttribution = $bindable(),
+    canUndo,
+    canRedo,
+    onUndo,
+    onRedo,
+  }: {
     placedPieces: PlacedPiece[];
     showAttribution: boolean;
+    canUndo: boolean;
+    canRedo: boolean;
+    onUndo: () => void;
+    onRedo: () => void;
   } = $props();
 
   let importError = $state<string | null>(null);
@@ -57,6 +68,8 @@
   {#if importError}
     <p class="error">{importError}</p>
   {/if}
+  <button class="link-button" onclick={onUndo} disabled={!canUndo}>Undo</button>
+  <button class="link-button" onclick={onRedo} disabled={!canRedo}>Redo</button>
   {#if placedPieces.length > 0}
     <button class="link-button" onclick={() => (placedPieces = [])}>
       Clear all ({placedPieces.length})
@@ -104,6 +117,11 @@
     cursor: pointer;
     font-size: 0.85rem;
     padding: 0;
+  }
+
+  .link-button:disabled {
+    color: #5a5f68;
+    cursor: default;
   }
 
   .error {
