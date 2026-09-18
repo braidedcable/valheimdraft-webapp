@@ -6,6 +6,7 @@
   import Attribution from './lib/Attribution.svelte';
   import Toolbar from './lib/Toolbar.svelte';
   import { serialize, deserialize } from './lib/persistence';
+  import { decodeSceneFromHash } from './lib/shareUrl';
   import type { PlacedPiece } from './lib/types';
 
   const STORAGE_KEY = 'valheimdraft:scene:v1';
@@ -27,6 +28,7 @@
   // not also yank the palette selection out from under the user.
   let selectedPrefab = $state<string | null>(null);
   let placedPieces = $state<PlacedPiece[]>(restorePieces());
+  let sharedLinkError = $state<string | null>(null);
 
   $effect(() => {
     try {
@@ -110,10 +112,60 @@
     suppressHistoryPush = true;
     placedPieces = next;
   }
+
+  // --- Loading a shared layout from the URL hash ---
+  //
+  // A link like #g<base64url...> is an explicit intent to load that
+  // specific layout, so it takes priority over whatever restorePieces()
+  // found in localStorage above. Decoding is async (gzip decompression),
+  // but placedPieces's *initial* $state value has to be synchronous, so
+  // there's no way to have the hash-decoded value be that initial value.
+  // Instead: seed placedPieces from localStorage as usual (above), then if
+  // a hash is present, kick off the async decode here and swap it in once
+  // it resolves. This means there's one brief initial render of the
+  // localStorage-restored (or empty) state before the shared layout
+  // appears — unavoidable given the platform's compression API is async,
+  // and harmless since it's typically a same-frame swap.
+  //
+  // The hash is cleared immediately (not after decoding) so a failed
+  // decode, a slow decode the user navigates away from, or simply
+  // reloading the page never keeps re-applying — or re-attempting to
+  // apply — the same shared link over the user's own subsequent edits,
+  // and so the address bar doesn't keep showing a stale, very long hash.
+  if (location.hash.length > 1) {
+    const encoded = location.hash.slice(1);
+    history.replaceState(null, '', location.pathname + location.search);
+
+    decodeSceneFromHash(encoded).then((pieces) => {
+      if (pieces === null) {
+        sharedLinkError = 'That share link is invalid or corrupted — showing your saved layout instead.';
+        return;
+      }
+
+      // Should Ctrl+Z right after opening a shared link undo back to the
+      // pre-load (localStorage/empty) state? No — the user never asked for
+      // that prior layout, so unraveling to it via undo would be
+      // surprising. suppressHistoryPush marks this reassignment as moving
+      // the undo baseline forward rather than recording an undoable step,
+      // the same mechanism undo()/redo() use above. The net effect: Ctrl+Z
+      // right after a shared-link load is simply a no-op (nothing in
+      // `past` yet), which matches "undo does nothing surprising".
+      suppressHistoryPush = true;
+      placedPieces = pieces;
+    });
+  }
 </script>
 
 <div class="app">
-  <Toolbar bind:placedPieces bind:showAttribution {canUndo} {canRedo} onUndo={undo} onRedo={redo} />
+  <Toolbar
+    bind:placedPieces
+    bind:showAttribution
+    {canUndo}
+    {canRedo}
+    onUndo={undo}
+    onRedo={redo}
+    {sharedLinkError}
+  />
 
   <main>
     {#if showAttribution}

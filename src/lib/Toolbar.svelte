@@ -1,6 +1,7 @@
 <script lang="ts">
   import type { PlacedPiece } from './types';
   import { serialize, deserialize } from './persistence';
+  import { encodeSceneToHash } from './shareUrl';
 
   let {
     placedPieces = $bindable(),
@@ -9,6 +10,7 @@
     canRedo,
     onUndo,
     onRedo,
+    sharedLinkError = null,
   }: {
     placedPieces: PlacedPiece[];
     showAttribution: boolean;
@@ -16,10 +18,35 @@
     canRedo: boolean;
     onUndo: () => void;
     onRedo: () => void;
+    // Set by App.svelte when a shared link in location.hash failed to
+    // decode on startup. Surfaced here so it uses the same error-message
+    // convention as importError below, rather than inventing a second one.
+    sharedLinkError?: string | null;
   } = $props();
 
   let importError = $state<string | null>(null);
   let fileInput: HTMLInputElement | undefined = $state();
+
+  let shareCopied = $state(false);
+  let shareError = $state<string | null>(null);
+  let shareResetTimer: ReturnType<typeof setTimeout> | undefined;
+
+  async function shareLink() {
+    shareError = null;
+    try {
+      const encoded = await encodeSceneToHash(placedPieces);
+      const url = `${location.origin}${location.pathname}#${encoded}`;
+      await navigator.clipboard.writeText(url);
+      shareCopied = true;
+      clearTimeout(shareResetTimer);
+      shareResetTimer = setTimeout(() => {
+        shareCopied = false;
+      }, 2000);
+    } catch (err) {
+      shareCopied = false;
+      shareError = err instanceof Error ? err.message : 'Could not create a share link.';
+    }
+  }
 
   function exportLayout() {
     const json = serialize(placedPieces);
@@ -65,8 +92,14 @@
 <header>
   <h1>ValheimDraft</h1>
   <p class="disclaimer">Unofficial fan project. Not affiliated with or endorsed by Iron Gate Studio.</p>
+  {#if sharedLinkError}
+    <p class="error">{sharedLinkError}</p>
+  {/if}
   {#if importError}
     <p class="error">{importError}</p>
+  {/if}
+  {#if shareError}
+    <p class="error">{shareError}</p>
   {/if}
   <button class="link-button" onclick={onUndo} disabled={!canUndo}>Undo</button>
   <button class="link-button" onclick={onRedo} disabled={!canRedo}>Redo</button>
@@ -77,6 +110,7 @@
   {/if}
   <button class="link-button" onclick={exportLayout}>Export</button>
   <button class="link-button" onclick={triggerImport}>Import</button>
+  <button class="link-button" onclick={shareLink}>{shareCopied ? 'Copied!' : 'Share'}</button>
   <input
     bind:this={fileInput}
     type="file"
