@@ -229,6 +229,48 @@ verified:
 - Attribution page + disclaimer, GitHub Pages deploy pipeline with CI typecheck.
 - Structural integrity was never in MVP scope (decision 4) — no gap there.
 
+### Scalability discussion: is the snap-scoring code becoming a piece-specific mess?
+
+Raised directly by the user after three back-to-back snap-scoring fixes in
+one day (top/bottom stacking → flush-vs-staggered → far-end reach →
+degenerate-overlap exclusion). Worth recording the answer, not just the
+reassurance:
+
+**The algorithm itself is not piece-specific.** `snapPositionAlongRay()` and
+`snapPosition()` contain zero branches on prefab name or piece category —
+every operation works generically on `piece.snapPoints` (a plain array of
+local offsets) and `piece.center`, using only vector/ray math. It would
+behave identically for a piece with 2 snap points or 20. Runtime cost
+scales with placed pieces in a scene, not catalog size — cataloging 600
+more piece types doesn't add code paths or slow this loop down.
+
+**What actually grew is the disambiguation heuristic, empirically, one
+ambiguity class at a time** — top/bottom, flush/stagger, near/far-end,
+same-side-overlap. Each is a genuine, general category (not a per-piece
+rule) discovered by testing against only two real geometries (a
+symmetric 4-corner wall, a 2-point pole). That's a real, narrower version
+of the scaling concern: pieces with different snap-point geometry
+(angled roofs, stairs — anything that doesn't look like "two ends of a
+line" or "top and bottom of a stack") could plausibly expose a
+disambiguation case not yet covered, since the space of tested inputs is
+still small relative to the eventual catalog.
+
+**The mitigation, not just a promise:** the standing regression suite
+(`src/lib/scene/snapping.test.ts`, `npm run test`) that came out of this
+same conversation. It turns "wait for the next user report to reveal the
+next ambiguity class" into "run every known case in under a second
+whenever `snapping.ts` changes." The discipline going forward: any future
+piece tier with meaningfully different snap-point geometry gets tested
+against this suite (and extended with new cases as needed) before being
+called done, rather than shipping and waiting to hear about the gap.
+
+One narrower, honestly-flagged residual risk: `SNAP_RADIUS`,
+`RAY_SNAP_REACH`, and the near-vertical/overlap-exclusion thresholds are
+fixed absolute world-space numbers, calibrated against roughly-2m-scale
+wood-tier pieces. A future tier with wildly different scale (tiny
+decorative items, oversized stone structures) might need these
+recalibrated — a tuning pass, not a redesign, when that tier arrives.
+
 See "Backlog" below for what's separately deferred (not part of MVP) and why.
 
 ## Backlog (post-MVP, low priority — revisit later, not now)
@@ -664,6 +706,53 @@ game's scroll-to-rotate scheme):**
   stack, pole stack, and floor edge-to-edge all re-confirmed unaffected;
   aiming above vs. level with the same wall produces the two different
   correct outcomes (stack vs. flush-extend) from the one mechanism.
+- **Follow-up, same day, user-reported:** long pieces (e.g. a 2.44m wall)
+  couldn't reliably reach a target with their *far* end — the previous
+  fix's `centerDist` scoring (correctly used to disambiguate same-target
+  candidates) was, when it was the ONLY ranking criterion, penalizing any
+  candidate whose center wasn't near the ray — which any far-end
+  connection necessarily is, by construction (the far end sits at the
+  target; the center sits half a piece-length away from it). Fixed by
+  reordering into a proper three-level comparison: `rayDist` (distance
+  from the ray to the real target point — independent of piece geometry,
+  so it doesn't care which end reaches it) now decides PRIMARILY which
+  connection point the user means; `centerDist` only breaks ties between
+  candidates that share the same target point (exactly the top/bottom and
+  flush/stagger cases the previous fix solved); the near-vertical "prefer
+  higher" fallback still applies as the last resort, one level deeper.
+- **A second, deeper issue found via the new unit suite while adding the
+  far-end test — not by inspection, by actually running it:** nothing
+  excluded a candidate from connecting via the SAME local snap offset the
+  target used for that point, rather than the complementary one — which
+  places the new piece in exact positional coincidence with the piece
+  it's connecting to. Confirmed this could win under `rayDist`/`centerDist`
+  scoring for a majority of tested camera angles (4 of 5), since a fully
+  degenerate, 100%-overlapping candidate can still score well by pure
+  distance metrics. Fixed with a hard exclusion (not a scoring input —
+  ray/center distance are legitimate signals for "which real connection
+  did you mean," but "does this erase an existing piece" isn't a matter
+  of degree): any candidate landing within 0.05 units of any placed
+  piece's own root position is skipped outright, checked against every
+  placed piece, not just the one owning the target point.
+- **Also found and fixed in the same pass:** the flush-end-to-end test
+  added the previous round only asserted `result.y`, which the degenerate
+  same-side candidate above *also* satisfies (same height, wrong X) — so
+  that test had been passing for the wrong reason since it was written.
+  Recalibrated with a realistic `tentativePos` + ray combination (a
+  ray-only version turned out to be genuinely ambiguous between
+  flush-extend and stack-above/below for a wall's fully symmetric 4-corner
+  layout — not a bug, just not representative of real usage, where the
+  raw ground raycast also carries real signal) and strengthened to check
+  x, y, and z.
+- **A standing regression suite now exists** (`src/lib/scene/snapping.test.ts`,
+  `npm run test`, wired into CI) covering every case above as a pure unit
+  test against real catalog prefabs — no browser, no camera, no pixel
+  targeting. Added specifically because this session's three rounds of
+  snap-scoring fixes were each found via real usage after the previous
+  fix shipped; see the "MVP status" section's scalability discussion
+  below for the full reasoning. Extend this suite, not a fresh throwaway
+  script, for any future snapping.ts change — including whatever new
+  piece tiers (stone, iron, roofs, stairs) turn out to need.
 
 **Everything not yet built from here is tracked in the "Backlog" section
 near the top of this doc, not repeated here.**
