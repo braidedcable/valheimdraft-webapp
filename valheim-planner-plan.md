@@ -283,6 +283,46 @@ See "Backlog" below for what's separately deferred (not part of MVP) and why.
 6. **Track A item 5 — `bpcsaveall` automation, needs in-game verification.** Code is written but only checked by review, not run in-game. Low priority since current cost data already in hand covers what's needed; only matters if the piece catalog grows and needs a refreshed cost dump.
 7. **Track A item 4 — `.blueprint` round-trip test** (export from the app, import into PlanBuild in-game, confirm the layout matches). Blocked on item 1 above existing first.
 
+### Untriaged: feature & look-and-feel ideas (2026-09-25, post-catalog-expansion)
+
+Raised in conversation after all three catalog batches shipped (204 pieces).
+None of these have design work, effort estimates, or priority yet — listed
+here so they aren't lost, to be triaged (and merged into the numbered list
+above, or dropped) when picked up.
+
+**Also worth checking now that the catalog spans a much wider size/shape
+range than when these were last tuned:**
+- The "Roof Cross" shape (`cross`, an X-truss) was a generator guess never
+  verified against a real in-game screenshot — could be a bowtie instead.
+- `SNAP_RADIUS`/`RAY_SNAP_REACH` (`snapping.ts`) were tuned against ~2m
+  wood-tier pieces; the catalog now spans tiny iron cage pieces to 6m+
+  drawbridges and hasn't been re-tested at either extreme.
+
+**Features:**
+- Duplicate/clone a placed piece (right-click or a shortcut), instead of
+  re-selecting from the palette every time.
+- Multi-select (box-select) + group move/rotate/delete.
+- Mirror/symmetry mode — build one half, auto-mirror across an axis.
+- Named save slots — currently one autosave slot; support multiple local
+  saved layouts.
+- Cost tally grouped by crafting station (workbench/forge/stonecutter/
+  blackforge/etc.), not just a flat material list.
+- Snap-point visualization — show small markers at a piece's connection
+  points while placing/hovering, so snapping behavior is visible.
+
+**Look and feel:**
+- Ground grid overlay (aligned to the 1m/2m building grid) — the flat green
+  plane currently gives no depth/scale reference.
+- Piece preview thumbnails in the palette (204 pieces across 14 groups is a
+  lot to scan as text-only rows).
+- Soft/contact shadows under placed pieces — the scene currently reads as
+  slightly "floating."
+- Selection highlight as an outline/glow instead of the current flat red
+  tint, which fights with a piece's own material color.
+- Sky/backdrop instead of the flat dark background.
+- Smooth camera transitions between the Iso/Top/Front presets instead of an
+  instant cut.
+
 ---
 
 ## Work tracks
