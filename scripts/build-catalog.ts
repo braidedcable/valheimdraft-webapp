@@ -39,11 +39,24 @@ interface Overrides {
       bounds?: Vec3;
       center?: Vec3;
       note?: string;
+      accept?: boolean;
     }
   >;
 }
 
 const overrides: Overrides = JSON.parse(fs.readFileSync(path.join(scriptDir, 'catalog-overrides.json'), 'utf8'));
+
+// Normally "shipped" means batch <= maxBatch, which is cumulative — batch 3
+// includes batch 2's families too. That makes it impossible to validate one
+// batch's fixes in isolation while another batch's are still in progress
+// elsewhere (e.g. two agents working on batch 2 and batch 3 in parallel,
+// each in their own worktree). CATALOG_FAMILIES overrides the filter to
+// "family is in this set" instead, regardless of maxBatch — for local
+// testing only; leave it unset for a real build.
+const includeFamilies = process.env.CATALOG_FAMILIES?.split(',').map((f) => f.trim());
+function isShipped(family: string, batch: number): boolean {
+  return includeFamilies ? includeFamilies.includes(family) : batch <= overrides.maxBatch;
+}
 
 // --- load raw sources ---
 interface DumpPiece {
@@ -222,6 +235,13 @@ for (const dumpPiece of dump) {
           : undefined;
     verdict = 'CLEAN';
     reason = pieceOverride.note ?? 'manual shape override';
+  } else if (pieceOverride?.accept) {
+    // classify()'s own shape/geom is kept as-is — only the verdict is
+    // forced to CLEAN. For pieces where the auto-classified shape is
+    // actually correct and only a heuristic sanity check (bounds vs.
+    // snap-box mismatch, off-center pivot) false-positived on it.
+    verdict = 'CLEAN';
+    reason = pieceOverride.note ?? 'accepted despite heuristic flag';
   }
 
   const label = pieceOverride?.label ?? overrides.labelOverrides[prefab] ?? labelByPrefab.get(prefab);
@@ -243,7 +263,7 @@ for (const dumpPiece of dump) {
     missingLabel,
   });
 
-  if (batch <= overrides.maxBatch) {
+  if (isShipped(family, batch)) {
     if (verdict !== 'CLEAN' || !shape) {
       console.error(`FAIL: ${prefab} is in shipped batch ${batch} but verdict is ${verdict} (${reason})`);
       process.exitCode = 1;
