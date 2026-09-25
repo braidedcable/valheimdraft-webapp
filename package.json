@@ -9,6 +9,7 @@
     "preview": "vite preview",
     "check": "svelte-check --tsconfig ./tsconfig.app.json && tsc -p tsconfig.node.json",
     "verify": "node scripts/verify.mjs",
+    "catalog": "node scripts/build-catalog.ts",
     "test": "vitest run"
   },
   "devDependencies": {

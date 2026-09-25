@@ -1,0 +1,115 @@
+{
+  "maxBatch": 1,
+  "familyOrder": [
+    "wood",
+    "core_wood",
+    "woodiron",
+    "darkwood",
+    "stone",
+    "iron",
+    "ashwood",
+    "grausten",
+    "flametal",
+    "blackmarble",
+    "timberwood",
+    "scalewood",
+    "dvergr",
+    "misc"
+  ],
+  "familyBatch": {
+    "wood": 1,
+    "core_wood": 1,
+    "woodiron": 1,
+    "darkwood": 1,
+    "stone": 1,
+    "iron": 1,
+    "ashwood": 2,
+    "grausten": 2,
+    "flametal": 2,
+    "blackmarble": 2,
+    "timberwood": 3,
+    "scalewood": 3,
+    "dvergr": 3,
+    "misc": 3
+  },
+  "familyRules": [
+    { "match": "^woodwall$", "family": "wood" },
+    { "match": "^woodiron_", "family": "woodiron" },
+    { "match": "^darkwood_", "family": "darkwood" },
+    { "match": "^wood_(wall_log|pole_log|log_)", "family": "core_wood" },
+    { "match": "^wood_", "family": "wood" },
+    { "match": "^stone_", "family": "stone" },
+    { "match": "^iron_", "family": "iron" },
+    { "match": "^ashwood_|^piece_stakewall_blackwood", "family": "ashwood" },
+    { "match": "^[Pp]iece_grausten_", "family": "grausten" },
+    { "match": "^([Pp]iece_flametal_|flametal_)", "family": "flametal" },
+    { "match": "^blackmarble_", "family": "blackmarble" },
+    { "match": "^stave_", "family": "timberwood" },
+    { "match": "^scale_", "family": "scalewood" },
+    { "match": "^piece_dvergr_|^piece_hexagonal_door", "family": "dvergr" }
+  ],
+  "itemNames": {
+    "Wood": "Wood",
+    "RoundLog": "Core wood",
+    "FineWood": "Fine wood",
+    "Tar": "Tar",
+    "Stone": "Stone",
+    "Iron": "Iron",
+    "IronNails": "Iron nails",
+    "BronzeNails": "Bronze nails",
+    "Bronze": "Bronze",
+    "Copper": "Copper",
+    "Tin": "Tin",
+    "Silver": "Silver",
+    "BlackMetal": "Black metal",
+    "FlametalNew": "Flametal",
+    "YggdrasilWood": "Yggdrasil wood",
+    "BlackMarble": "Black marble",
+    "Grausten": "Grausten",
+    "Obsidian": "Obsidian",
+    "Crystal": "Crystal"
+  },
+  "exclude": {
+    "darkwood_raven": "adornment, hangs off a wall rather than standing on the snap grid",
+    "darkwood_wolf": "adornment, hangs off a wall rather than standing on the snap grid",
+    "wood_dragon1": "adornment, hangs off a wall rather than standing on the snap grid"
+  },
+  "labelOverrides": {
+    "darkwood_beam_67": "Darkwood Beam 67°"
+  },
+  "pieces": {
+    "wood_floor": { "pinned": true, "shape": "box", "family": "wood", "bounds": { "x": 2.011942, "y": 0.2208748, "z": 2.00195 }, "center": { "x": -0.005970836, "y": -0.02964314, "z": -0.007599831 } },
+    "wood_floor_1x1": { "pinned": true, "shape": "box", "family": "wood", "bounds": { "x": 1, "y": 0.1000021, "z": 1.000001 }, "center": { "x": -0.0150001, "y": 0.03079224, "z": -0.007599831 } },
+    "wood_wall_log": { "pinned": true, "shape": "box", "family": "wood", "bounds": { "x": 2.439907, "y": 0.529008, "z": 0.5507023 }, "center": { "x": -0.001596689, "y": 0.0002790093, "z": 0 } },
+    "wood_wall_half": { "pinned": true, "shape": "box", "family": "wood", "bounds": { "x": 2.010799, "y": 1.00246, "z": 0.4273766 }, "center": { "x": 0.005399585, "y": 0, "z": -0.06368825 } },
+    "wood_wall_quarter": { "pinned": true, "shape": "box", "family": "wood", "bounds": { "x": 1.014004, "y": 1.00246, "z": 0.4273778 }, "center": { "x": 0.007001758, "y": 0.5, "z": -0.06368759 } },
+    "wood_pole": { "pinned": true, "shape": "cylinder", "family": "wood", "bounds": { "x": 0.4000002, "y": 1, "z": 0.4 }, "center": { "x": 0, "y": 0, "z": 0 } },
+    "wood_pole2": { "pinned": true, "shape": "cylinder", "family": "wood", "bounds": { "x": 0.4000003, "y": 2, "z": 0.4 }, "center": { "x": 0, "y": 0, "z": 0 } },
+    "wood_beam": { "pinned": true, "shape": "box", "family": "wood", "bounds": { "x": 2.243754, "y": 0.4, "z": 0.5512928 }, "center": { "x": 0.004845619, "y": 0, "z": -2.980232e-8 } },
+    "wood_door": { "pinned": true, "shape": "box", "family": "wood", "bounds": { "x": 2, "y": 2.019858, "z": 0.5 }, "center": { "x": 0, "y": -0.00006985664, "z": 0 } },
+    "wood_stair": { "pinned": true, "shape": "stairs", "family": "wood", "bounds": { "x": 2.004185, "y": 1.182492, "z": 2.097736 }, "center": { "x": 0.000006198883, "y": 0.458754, "z": -0.03901148 } },
+    "wood_roof": { "pinned": true, "shape": "wedge", "family": "wood", "bounds": { "x": 2.220491, "y": 1.900459, "z": 3.074555 }, "center": { "x": 0.02587342, "y": 0.6016157, "z": 0.09818316 } },
+    "wood_roof_icorner": { "pinned": true, "shape": "valley", "family": "wood", "bounds": { "x": 2.689098, "y": 1.358806, "z": 2.744093 }, "center": { "x": 0.09945166, "y": 0.5714013, "z": 0.09995389 } },
+    "wood_roof_ocorner": { "pinned": true, "shape": "hip", "family": "wood", "bounds": { "x": 2.755872, "y": 1.526373, "z": 2.786874 }, "center": { "x": 0.1270648, "y": 0.5117875, "z": 0.1205636 } },
+    "wood_roof_top": { "pinned": true, "shape": "wedge", "family": "wood", "bounds": { "x": 2.209374, "y": 1.026876, "z": 3.079612 }, "center": { "x": -0.04600239, "y": 0.3450727, "z": 0.000003218651 } },
+    "wood_gate": { "pinned": true, "shape": "box", "family": "wood", "bounds": { "x": 0.3, "y": 3, "z": 0.5 }, "center": { "x": 0.8499999, "y": 0.5, "z": 0 } },
+    "wood_fence": { "pinned": true, "shape": "fence", "family": "wood", "bounds": { "x": 2.707283, "y": 2.30124, "z": 0.3122733 }, "center": { "x": -0.009239435, "y": 0.9925511, "z": 0 } },
+    "wood_window": { "pinned": true, "shape": "box", "family": "wood", "bounds": { "x": 0.32, "y": 1.05, "z": 0.36 }, "center": { "x": -0.01000001, "y": 0, "z": 0 } },
+    "wood_stepladder": { "pinned": true, "shape": "ladder", "family": "wood", "bounds": { "x": 1.000001, "y": 2.156676, "z": 2.156676 }, "center": { "x": 0, "y": 0.9999999, "z": 0 } },
+
+    "wood_fence_gate": { "shape": "fence", "boundsFrom": "snaps", "batch": 1, "note": "bounds cover only the hinge post (0.12m vs ~2m of snap extent), same sub-mesh-bounds issue as wood_gate; using the snap-point box instead" },
+
+    "iron_floor_1x1_v2": { "shape": "lattice", "bars": "grid", "batch": 1, "note": "a cage floor reads as a solid box otherwise; grid bars approximate the see-through cage look" },
+    "iron_floor_2x2": { "shape": "lattice", "bars": "grid", "batch": 1, "note": "see iron_floor_1x1_v2" },
+    "iron_wall_1x1": { "shape": "lattice", "bars": "grid", "batch": 1, "note": "see iron_floor_1x1_v2" },
+    "iron_wall_2x2": { "shape": "lattice", "bars": "grid", "batch": 1, "note": "see iron_floor_1x1_v2" },
+    "iron_grate": { "shape": "lattice", "bars": "vertical", "batch": 1, "note": "in-game name is 'Iron Gate', not a floor grate — a functional piece, vertical bars only (portcullis-style)" },
+
+    "stone_arch": { "shape": "arch", "batch": 1, "note": "functional archway; classify() can't tell an archway from a flat panel by snap-point count alone" },
+    "darkwood_arch": { "shape": "arch", "batch": 1, "note": "see stone_arch" },
+
+    "darkwood_gate": { "shape": "door", "leaves": 2, "batch": 1 },
+
+    "stone_fence": { "family": "misc", "batch": 3, "note": "category 0 (Misc) — deferred alongside other misc pieces rather than shipped early with the rest of Stone" }
+  }
+}

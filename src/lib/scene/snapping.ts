@@ -1,9 +1,10 @@
 import * as THREE from 'three';
 import piecesData from '../../data/pieces.json';
 import type { PlacedPiece, Quat, Vec3 } from '../types';
+import type { PieceData, SnapPoint } from '../catalog/types';
 
-export type PieceEntry = (typeof piecesData.pieces)[number];
-type SnapPoint = PieceEntry['snapPoints'][number];
+export type PieceEntry = PieceData;
+const typedPieces = piecesData.pieces as unknown as PieceData[];
 
 // The extractor can occasionally emit the same snap point twice for a piece
 // (e.g. captured once per wear-state variant mesh sharing the same
@@ -37,7 +38,7 @@ function dedupeSnapPoints(snapPoints: SnapPoint[]): SnapPoint[] {
 // once at module load), so every later lookup via getPieceData already
 // returns a clean, duplicate-free snapPoints array.
 const piecesByPrefab = new Map(
-  piecesData.pieces.map((p) => [p.prefab, { ...p, snapPoints: dedupeSnapPoints(p.snapPoints) }])
+  typedPieces.map((p) => [p.prefab, { ...p, snapPoints: dedupeSnapPoints(p.snapPoints) }])
 );
 
 export function getPieceData(prefab: string): PieceEntry | undefined {
@@ -263,13 +264,26 @@ export function snapPositionAlongRay(
         // nothing was excluding it. A hard exclusion, not a scoring input —
         // ray/center distance are legitimate signals for "which real
         // connection did you mean," but "does this candidate erase an
-        // existing piece" isn't a matter of degree. Checked against every
-        // placed piece, not just the one owning targetPoint, since the
-        // resulting position could just as easily coincide with a
-        // different, unrelated piece. 0.05 units is comfortably below any
-        // real snap-point-to-root offset in the current catalog (smallest
-        // is wood_pole's 0.5) so it only ever catches genuine coincidence.
-        if (placedPieces.some((p) => candidatePos.distanceTo(toVector3(p.pos)) < DEGENERATE_OVERLAP_EPSILON)) {
+        // existing piece" isn't a matter of degree.
+        //
+        // Narrowed to same-prefab + same-rotation placed pieces only (was:
+        // any placed piece at all). Some catalog pieces have a snap point
+        // exactly at their own root (distance 0, e.g. darkwood_arch's
+        // hinge-corner snap) — a genuinely different piece hanging off that
+        // exact point at a different rotation (e.g. a second arch turned
+        // 90° off the same pole top) is a valid, distinct connection, not
+        // an overlap, and the old any-piece check blocked it outright.
+        // Same-prefab + same-rotation still catches the real degenerate
+        // case this exists for (two candidates of the SAME piece pairing
+        // with the same target from opposite sides land on the same root).
+        if (
+          placedPieces.some(
+            (p) =>
+              p.prefab === prefab &&
+              candidatePos.distanceTo(toVector3(p.pos)) < DEGENERATE_OVERLAP_EPSILON &&
+              rot.angleTo(toQuaternion(p.rot)) < 1e-3
+          )
+        ) {
           continue;
         }
 

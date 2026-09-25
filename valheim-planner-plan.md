@@ -792,3 +792,172 @@ component.
 - `.vbuild` round-trip: export from the app, import into PlanBuild in-game, verify layout matches (Track A item 4).
 - Deploy `main` to `gh-pages` and click through the same flows on the live site (GitHub Pages project sites don't do native per-PR previews — verification happens against the deployed site, not a PR preview).
 - License audit before first deploy: confirm no wiki images or ripped assets are in the repo; confirm attribution page is present and disclaimer is visible in the deployed UI.
+
+---
+
+## Catalog expansion — batch 1 shipped (post-MVP)
+
+MVP shipped 18 hand-picked wood pieces with no generator — `pieces.json` was
+written by hand from `pieces-dump.json` + `bpcsaveall` data in one commit.
+211 buildable pieces in the source data have snap points; 180 weren't in the
+app. This work built a repeatable pipeline to grow the catalog in reviewed
+batches instead of continuing to hand-author entries one at a time.
+
+**Batches** (grouped by material family, not by how hard each one turned out
+to be): 1 = wood gaps + core wood + wood-iron + darkwood + stone + iron. 2 =
+ashwood + grausten + flametal + black marble. 3 = timberwood + scalewood +
+dvergr + misc. Only batch 1 is shipped (`maxBatch: 1` in
+`scripts/catalog-overrides.json`); batches 2–3 exist in the classification
+report but aren't in `src/data/pieces.json` yet, pending the same
+per-batch visual sign-off this batch got.
+
+### The pipeline
+
+- **`scripts/build-catalog.ts`** (run via `npm run catalog`, no build step —
+  Node 24 strips TS types natively) joins `pieces-dump.json`, the
+  `shudnal.BuildPiecesCustomized/*.json` per-piece files, and the Hammer
+  section of `Pieces and properties.md` (the only source of English piece
+  names — parsed directly, not hardcoded). `VALHEIMDRAFT_DATA` overrides the
+  default `../valheimdraft` data-repo path.
+- **`src/lib/catalog/derive.ts`** — the classification logic, pure and
+  THREE-free so it's shared unchanged between the generator and the vitest
+  suite (`derive.test.ts`). For each piece it infers a shape from the raw
+  snap-point pattern (2 diagonal points → `beam`, 3 → `triangle`, a 4-corner
+  box with one odd-height corner → `hip`/`valley`, 5 = corners+center →
+  `cross`, 6 = eave+ridge → `ridge`, etc.) and flags anything that doesn't
+  fit a known pattern, has a functional name (`door|gate|grate|window|
+  shutter|hatch|arch`, unless it's a `stair`/`ladder`, which already have
+  legacy shapes) with no dedicated shape, or has bounds that look wrong
+  relative to its own snap points (sub-mesh bounds, off-center pivot,
+  oversized).
+- **`scripts/catalog-overrides.json`** is the only hand-maintained file: it
+  pins the original 18 MVP pieces' shape/family/bounds/center exactly as
+  they were (labels are NOT pinned — see below), assigns material families
+  by prefab-prefix regex, forces a shape for the handful of pieces the
+  auto-classifier can't resolve on its own (see "New shapes" below), and
+  lists batch/family exceptions.
+- **`catalog-report.md`/`.json`** (generator output, committed) is the
+  reviewable artifact — every classified piece, its verdict (CLEAN /
+  NEEDS_NEW_SHAPE / SUSPICIOUS / REVIEW / EXCLUDE), and why. This is what
+  gets read before raising `maxBatch`, not just trusting the generator ran
+  without errors. The generator itself refuses to write any output
+  (`process.exit(1)`) if a piece in a *shipped* batch isn't CLEAN or its
+  family has no registered render color.
+
+**Labels switched to in-game names** for all pieces, including the original
+18 (e.g. "Wood Wall (Log)" → "Log Beam 2 m", matching what the Hammer menu
+actually shows) — a deliberate decision made when this batch was scoped, not
+an accident of the generator. Shape/family/bounds/center for those 18 are
+still frozen (`pinned: true` in the overrides), so this only changed what's
+displayed, not what's rendered or how saved layouts resolve.
+
+### New shapes
+
+`box`/`cylinder`/`wedge`/`stairs`/`ladder`/`fence`/`hip`/`valley` (the
+original MVP set) gained `beam`, `triangle`, `cross`, `ridge`, `arch`,
+`lattice`, `door` — all built in `src/lib/scene/geometry.ts`, driven by a
+`geom` parameter block the generator precomputes from real snap-point data
+and stores in `pieces.json` (see `src/lib/catalog/types.ts`'s `ShapeParams`
+union). `hip`/`valley` were also generalized: which corner is the odd one
+out (`geom.odd`) now comes from the piece's own snap data instead of being
+hardcoded to the two original wood corner pieces (unchanged default when
+`geom` is absent, so the two pinned pieces render identically to before).
+
+Three of these needed a manual shape override rather than pure
+auto-classification, all in `catalog-overrides.json`'s `pieces` map:
+- `stone_arch`/`darkwood_arch` → `arch`. Auto-classification can't tell an
+  archway from a flat panel by snap-point count alone (they don't share one
+  consistent pattern), and the functional-name rule (`arch` in the name)
+  already routes them to NEEDS_NEW_SHAPE, so this is a targeted fix, not a
+  gap in the pattern logic.
+- `iron_floor_1x1_v2`/`_2x2`/`iron_wall_1x1`/`_2x2`, `iron_grate` → `lattice`
+  (frame + bar grid). Left to auto-classification these are plain 8-corner
+  boxes (a valid CLEAN verdict), but a solid box is wrong for a see-through
+  cage piece. `iron_grate` specifically is the in-game **"Iron Gate"** (not
+  a floor grate — found by checking the actual label, not assumed from the
+  prefab name) and uses vertical-bars-only (`bars: "vertical"`), matching a
+  portcullis rather than a cage floor/wall.
+- `darkwood_gate` → `door` (2 leaves).
+- `wood_fence_gate` → kept `fence`, with `boundsFrom: "snaps"` — its real
+  bounds cover only the hinge post (0.12m vs. ~2m of snap extent), the same
+  sub-mesh-bounds problem `wood_gate` already had in the MVP catalog.
+
+**Two real bugs found and fixed during this batch, not just theorized:**
+- **Classification bug, caught by eye before shipping, not by a test:** the
+  first version of the "4 corners, 2 heights → sloped wedge" rule didn't
+  check whether the height split actually correlated with depth. A plain
+  vertical wall (`woodwall`: two corners at y=+1, two at y=-1, but *both
+  groups at the same z*) matches "2/2 height split" exactly as well as a
+  real roof panel does, and was rendering as a tilted ramp instead of a flat
+  wall. Fixed by requiring the low and high corner groups to also differ in
+  depth (z) before calling it a slope — otherwise it's `box`. This wasn't
+  wood-tier-specific: the same fix corrected the same misclassification for
+  every wall-type piece across all three batches (ashwood, grausten, scale,
+  dvergr, stave, stone_fence, crystal_wall, stake_wall — all previously
+  wrong), confirmed by re-running the generator and diffing the report.
+- **Runtime crash, caught by the headless verify gallery, not by vitest:**
+  `door`'s first implementation merged an `ExtrudeGeometry` (the frame,
+  non-indexed) with `BoxGeometry` leaves (indexed by default) via
+  `mergeGeometries()`, which requires all-or-none of its inputs to be
+  indexed — this failed silently in the browser (a `console.error` from
+  Three.js, not a thrown exception) and left `placedGroup` in a broken state
+  that crashed the next render effect. Fixed by calling `.toNonIndexed()` on
+  the leaf boxes before merging. `derive.test.ts`'s "every piece builds
+  geometry with finite vertex positions" check *should* catch this class of
+  bug in vitest going forward — confirmed by re-running it against the
+  fixed code, not just asserted.
+- **Design iteration, not a bug:** `door`'s first visual pass (a flush,
+  subtly recessed leaf) was indistinguishable from a plain box in a
+  screenshot — this app's flat directional lighting has no shading cue for
+  a few-centimeter depth difference. Redesigned to cut a real geometric
+  opening through the frame (same technique as `arch`) with the leaf/leaves
+  visibly offset within it, which reads correctly in silhouette from any
+  angle rather than relying on shading.
+
+### Palette and cost display
+
+`PiecePalette.svelte` is no longer a flat list — pieces group into
+collapsible `<details>` sections by family (in the same order the generator
+already sorted `pieces.json`, so no duplicate ordering config at runtime),
+each in in-game menu order, plus a search box that filters by label/prefab
+and force-opens matching groups. Cost items (in the palette and
+`CostTally.svelte`) show display names (`RoundLog` → "Core wood", etc.) via
+`src/lib/catalog/itemNames.ts`, reading a generator-written
+`src/data/item-names.json` built from `catalog-overrides.json`'s
+`itemNames` map.
+
+### Snapping change
+
+`snapping.ts`'s degenerate-overlap exclusion (in `snapPositionAlongRay`,
+prevents a candidate from landing exactly on an existing piece's root) was
+narrowed from "any placed piece" to "same prefab **and** same rotation".
+Some pieces have a snap point exactly at their own root (`darkwood_arch`,
+confirmed the only one in batch 1) — the old any-piece check blocked a
+*second*, differently-rotated arch from ever connecting to the same point,
+which is a real, valid connection, not a duplicate. Covered by new
+`snapping.test.ts` cases: same-prefab+same-rotation still blocked
+(regression baseline), same-prefab+different-rotation now allowed (the
+fix), and a mixed-prefab coincidence (`wood_floor`/`iron_floor_2x2`, which
+happen to share a real local snap offset) confirming the narrowing doesn't
+accidentally exclude too little either.
+
+### Verification
+
+`npm run catalog && npm run check && npm run test` all pass. `npm run
+verify` (with `VERIFY_GALLERY=1`) seeds `localStorage` with every batch-1
+piece in an adaptively-spaced grid per family, screenshots each
+(`.verify/gallery-<family>.png`), and checked for console errors — this is
+how the shape work above was actually reviewed, since this environment has
+no interactive browser. Every batch-1 family was reviewed this way,
+including targeted close-ups (front-on for the arch/door shapes
+specifically) before the two bugs above were found and fixed.
+
+**Not done, deliberately:** batches 2 and 3 (`catalog-report.md` shows their
+classification already — some REVIEW/SUSPICIOUS items to resolve,
+e.g. `piece_stakewall_blackwood`'s off-center pivot, `blackmarble_column_1/2`'s
+18-snap-point pattern, `stave_wall_2x2`'s 6-point pattern not matching the
+`ridge` shape) and the "Roof Cross" shape's X-vs-bowtie question (built as
+an X per the generator's guess; wasn't specifically re-verified against a
+real in-game screenshot). Raise `maxBatch` in `catalog-overrides.json` and
+re-run `npm run catalog` to ship the next batch once it's been reviewed the
+same way this one was.

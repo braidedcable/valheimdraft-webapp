@@ -221,7 +221,9 @@
   aside {
     width: 220px;
     border-right: 1px solid #2a2d33;
-    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
   }
 
   .viewport-wrap {

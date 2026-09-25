@@ -1,5 +1,6 @@
 <script lang="ts">
   import { getPieceData } from './scene/snapping';
+  import { displayItemName } from './catalog/itemNames';
   import type { PlacedPiece } from './types';
 
   let { placedPieces }: { placedPieces: PlacedPiece[] } = $props();
@@ -24,7 +25,7 @@
   {:else}
     <ul>
       {#each totals as t (t.item)}
-        <li><span class="amount">{t.amount}</span> {t.item}</li>
+        <li><span class="amount">{t.amount}</span> {displayItemName(t.item)}</li>
       {/each}
     </ul>
   {/if}

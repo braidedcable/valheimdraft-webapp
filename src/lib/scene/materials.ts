@@ -4,6 +4,8 @@
 export const MATERIAL_FAMILY_COLORS: Record<string, number> = {
   wood: 0xb08a5c,
   core_wood: 0x8a6a45,
+  darkwood: 0x4b3526,
+  woodiron: 0x7a6a58,
   stone: 0x9a9a9a,
   iron: 0x6b6f76,
   thatch: 0xcdbb7a,

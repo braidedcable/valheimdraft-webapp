@@ -2,7 +2,7 @@
   import { onMount, untrack } from 'svelte';
   import * as THREE from 'three';
   import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
-  import { geometryForPiece, DOUBLE_SIDED_SHAPES, type PieceShape } from './scene/geometry';
+  import { geometryForPiece, DOUBLE_SIDED_SHAPES } from './scene/geometry';
   import { colorForFamily } from './scene/materials';
   import { getPieceData, snapPositionAlongRay, type PieceEntry } from './scene/snapping';
   import type { PlacedPiece } from './types';
@@ -62,13 +62,12 @@
     scene.add(ground);
 
     function buildMesh(piece: PieceEntry, color: number, opacity = 1): THREE.Mesh {
-      const shape = piece.shape as PieceShape;
-      const geometry = geometryForPiece(shape, piece.bounds);
+      const geometry = geometryForPiece(piece);
       const material = new THREE.MeshStandardMaterial({
         color,
         transparent: opacity < 1,
         opacity,
-        side: DOUBLE_SIDED_SHAPES.has(shape) ? THREE.DoubleSide : THREE.FrontSide,
+        side: DOUBLE_SIDED_SHAPES.has(piece.shape) ? THREE.DoubleSide : THREE.FrontSide,
       });
       return new THREE.Mesh(geometry, material);
     }
@@ -106,7 +105,7 @@
         if (placed.id === movingPieceId) continue; // shown as the ghost instead
         const piece = getPieceData(placed.prefab);
         if (!piece) continue;
-        const color = placed.id === hoveredPlacedId ? 0xff5555 : colorForFamily(piece.materialFamily);
+        const color = placed.id === hoveredPlacedId ? 0xff5555 : colorForFamily(piece.family);
         const mesh = buildMesh(piece, color);
         const pos = new THREE.Vector3(placed.pos.x, placed.pos.y, placed.pos.z);
         const rot = new THREE.Quaternion(placed.rot.x, placed.rot.y, placed.rot.z, placed.rot.w);
@@ -133,7 +132,7 @@
       if (!prefab) return;
       const piece = getPieceData(prefab);
       if (!piece) return;
-      ghostMesh = buildMesh(piece, colorForFamily(piece.materialFamily), 0.5);
+      ghostMesh = buildMesh(piece, colorForFamily(piece.family), 0.5);
       scene.add(ghostMesh);
     }
 

@@ -203,3 +203,87 @@ describe('snapPositionAlongRay — no spurious long-range snapping', () => {
     expect(result.equals(tentative)).toBe(true);
   });
 });
+
+// --- Catalog-expansion regression cases (stone/iron/angled-beam scale, and
+// the degenerate-overlap exclusion narrowed to same-prefab+same-rotation —
+// see valheim-planner-plan.md's "Catalog expansion" section for why). ---
+
+describe('snapPosition — stone tier (8-corner box)', () => {
+  it('stacks a stone wall exactly 1.0 above another, all 8 corners considered', () => {
+    const wallA = place('stone_wall_1x1', new THREE.Vector3(0, 0, 0));
+    // Exactly aligned with wallA's top face — the closest pair is
+    // guaranteed to be top-of-A/bottom-of-ghost, not a mismatched corner.
+    const tentative = new THREE.Vector3(0, 1.0, 0);
+    const result = snapPosition('stone_wall_1x1', tentative, IDENTITY, [wallA]);
+    expect(result.y).toBeCloseTo(1.0, 10);
+    expect(result.x).toBeCloseTo(0, 10);
+    expect(result.z).toBeCloseTo(0, 10);
+  });
+});
+
+describe('snapPosition — iron tier (small 1m-scale cage floor)', () => {
+  it('snaps two iron floor tiles edge-to-edge with an exact 2-unit offset', () => {
+    const floorA = place('iron_floor_2x2', new THREE.Vector3(0, 0, 0));
+    const tentative = new THREE.Vector3(1.6, 0, 0);
+    const result = snapPosition('iron_floor_2x2', tentative, IDENTITY, [floorA]);
+    expect(result.x).toBeCloseTo(2, 10);
+    expect(result.y).toBeCloseTo(0, 10);
+    expect(result.z).toBeCloseTo(0, 10);
+  });
+});
+
+describe('snapPosition — angled beam (snap-derived shape, diagonal snap points)', () => {
+  it('chains two 45° beams end-to-end at exactly (2, 2, 0)', () => {
+    const beamA = place('wood_beam_45', new THREE.Vector3(0, 0, 0));
+    const tentative = new THREE.Vector3(1.3, 1.3, 0);
+    const result = snapPosition('wood_beam_45', tentative, IDENTITY, [beamA]);
+    expect(result.x).toBeCloseTo(2, 10);
+    expect(result.y).toBeCloseTo(2, 10);
+    expect(result.z).toBeCloseTo(0, 10);
+  });
+});
+
+describe('snapPositionAlongRay — degenerate-overlap exclusion narrowed to same-prefab + same-rotation', () => {
+  // darkwood_arch has a snap point exactly at its own root (local 0,0,0),
+  // so a second arch connecting there necessarily wants its root at the
+  // exact same world position as the first. The old exclusion (any placed
+  // piece, any rotation) blocked this outright; the narrowed one only
+  // blocks it when it's truly the same piece/orientation landing on itself.
+  const ROT_90 = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), Math.PI / 2);
+  const target = new THREE.Vector3(5, 0, 5); // arch A's root, at identity rotation
+  // Close enough (< SNAP_RADIUS) to qualify via point-distance for the
+  // coincident (0,0,0) local offset, but far enough from A's OTHER two
+  // snap points (~2-2.8 units away after rotation) that they don't
+  // qualify — isolates the test to exactly the root-coincidence pairing.
+  const tentative = new THREE.Vector3(5.3, 0, 5.3);
+  // Aimed far from the scene entirely, so nothing qualifies via rayDist —
+  // only the point-distance path (above) can produce a candidate here.
+  const farRay = new THREE.Ray(new THREE.Vector3(50, 50, 50), new THREE.Vector3(0, -1, 0));
+
+  it('still blocks a second arch at the SAME rotation from coinciding with the first', () => {
+    const archA = place('darkwood_arch', target, IDENTITY);
+    const result = snapPositionAlongRay('darkwood_arch', tentative, IDENTITY, [archA], farRay);
+    expect(result.equals(tentative)).toBe(true); // no snap — excluded, falls back
+  });
+
+  it('allows a second arch at a DIFFERENT rotation to connect at the same point', () => {
+    const archA = place('darkwood_arch', target, IDENTITY);
+    const result = snapPositionAlongRay('darkwood_arch', tentative, ROT_90, [archA], farRay);
+    expect(result.distanceTo(target)).toBeCloseTo(0, 6);
+  });
+
+  it('allows a DIFFERENT prefab to coincide with a placed piece\'s root (mixed-prefab case)', () => {
+    // wood_floor and iron_floor_2x2 happen to share an exact local snap
+    // offset, (1, 0, 1) — real data, not fabricated — which lets this be
+    // constructed the same way as the two cases above but across prefabs:
+    // floorA's (1,0,1) world snap point, minus the ghost's own (1,0,1)
+    // local offset, lands exactly back on floorA's root.
+    const floorRoot = new THREE.Vector3(5, 0, 5);
+    const floorA = place('wood_floor', floorRoot, IDENTITY);
+    // floorA's (1,0,1) world snap point is floorRoot + (1,0,1); the ghost's
+    // own (1,0,1) local offset cancels it back out to floorRoot exactly.
+    const ghostTentative = floorRoot.clone().add(new THREE.Vector3(0.3, 0, 0.3));
+    const result = snapPositionAlongRay('iron_floor_2x2', ghostTentative, IDENTITY, [floorA], farRay);
+    expect(result.distanceTo(floorRoot)).toBeCloseTo(0, 6);
+  });
+});
