@@ -24,6 +24,12 @@
   // family pieces can otherwise read as one blob. Defaults on; toggleable
   // since it's not everyone's preference once the shape is already clear.
   let showOutlines = $state(true);
+  // "X-ray": fades out whatever placed piece sits between the camera and
+  // another placed piece further back, so building inside an enclosed shell
+  // (walls/roof already up) doesn't require deleting or hiding them first.
+  // Off by default — unlike outlines this actively changes what's visible,
+  // not just a boundary-clarity aid.
+  let showXray = $state(false);
 
   const CAMERA_PRESETS: Record<string, THREE.Vector3> = {
     iso: new THREE.Vector3(14, 14, 14),
@@ -91,12 +97,14 @@
     // instance, every time — fine at a handful of pieces, a real stutter
     // once dozens/hundreds accumulate. Cached per prefab and reused across
     // every instance instead; disposed on unmount below.
-    const pieceAssetCache = new Map<string, { geometry: THREE.BufferGeometry; edges: THREE.BufferGeometry }>();
-    function getPieceAssets(piece: PieceEntry): { geometry: THREE.BufferGeometry; edges: THREE.BufferGeometry } {
+    type PieceAssets = { geometry: THREE.BufferGeometry; edges: THREE.BufferGeometry; boundingSphere: THREE.Sphere };
+    const pieceAssetCache = new Map<string, PieceAssets>();
+    function getPieceAssets(piece: PieceEntry): PieceAssets {
       let assets = pieceAssetCache.get(piece.prefab);
       if (!assets) {
         const geometry = geometryForPiece(piece);
-        assets = { geometry, edges: new THREE.EdgesGeometry(geometry) };
+        geometry.computeBoundingSphere();
+        assets = { geometry, edges: new THREE.EdgesGeometry(geometry), boundingSphere: geometry.boundingSphere!.clone() };
         pieceAssetCache.set(piece.prefab, assets);
       }
       return assets;
@@ -151,10 +159,25 @@
       return mesh;
     }
 
-    function setMeshAppearance(mesh: THREE.Mesh, piece: PieceEntry, color: number, opacity = 1) {
-      mesh.material = getFillMaterial(color, opacity, DOUBLE_SIDED_SHAPES.has(piece.shape));
+    // outlineOpacity defaults to fillOpacity (the common case: hover-color
+    // changes, initial build) but xray needs them to diverge — a piece
+    // that's faded to near-invisible fill should still read as a visible
+    // outline, per the "still support outlines" requirement.
+    function setMeshAppearance(mesh: THREE.Mesh, piece: PieceEntry, color: number, fillOpacity = 1, outlineOpacity = fillOpacity) {
+      mesh.material = getFillMaterial(color, fillOpacity, DOUBLE_SIDED_SHAPES.has(piece.shape));
       const outline = mesh.children[0] as THREE.LineSegments | undefined;
-      if (outline) outline.material = getOutlineMaterial(contrastingOutlineColor(color), opacity);
+      if (outline) outline.material = getOutlineMaterial(contrastingOutlineColor(color), outlineOpacity);
+    }
+
+    // Wraps setMeshAppearance with userData bookkeeping so hover-driven color
+    // changes and xray-driven opacity changes never clobber each other —
+    // each reads the other's last-applied value off the mesh instead of
+    // assuming full opacity/un-hovered color.
+    function applyMeshAppearance(mesh: THREE.Mesh, piece: PieceEntry, color: number, fillOpacity: number, outlineOpacity = fillOpacity) {
+      setMeshAppearance(mesh, piece, color, fillOpacity, outlineOpacity);
+      mesh.userData.color = color;
+      mesh.userData.opacity = fillOpacity;
+      mesh.userData.outlineOpacity = outlineOpacity;
     }
 
     // A piece's geometry is centered on its own local origin, but its true
@@ -213,12 +236,14 @@
         if (!mesh) {
           mesh = buildMesh(piece, color);
           mesh.userData.placedId = placed.id;
+          mesh.userData.piece = piece;
           mesh.userData.color = color;
+          mesh.userData.opacity = 1;
+          mesh.userData.outlineOpacity = 1;
           meshByPlacedId.set(placed.id, mesh);
           placedGroup.add(mesh);
         } else if (mesh.userData.color !== color) {
-          setMeshAppearance(mesh, piece, color);
-          mesh.userData.color = color;
+          applyMeshAppearance(mesh, piece, color, mesh.userData.opacity ?? 1, mesh.userData.outlineOpacity ?? 1);
         }
 
         const pos = new THREE.Vector3(placed.pos.x, placed.pos.y, placed.pos.z);
@@ -245,8 +270,87 @@
       if (!piece) return;
       const color = colorForPlaced(id, piece.family);
       if (mesh.userData.color === color) return;
-      setMeshAppearance(mesh, piece, color);
-      mesh.userData.color = color;
+      applyMeshAppearance(mesh, piece, color, mesh.userData.opacity ?? 1, mesh.userData.outlineOpacity ?? 1);
+    }
+
+    // --- X-ray (see-through) ---
+    // Fill fades to near-nothing; outline stays much more visible, so the
+    // occluding piece's silhouette still reads while its face doesn't block
+    // the view. Pure constants, not derived from anything.
+    const XRAY_FILL_OPACITY = 0.08;
+    const XRAY_OUTLINE_OPACITY = 0.35;
+
+    // Every placed piece's world bounding sphere, refreshed once per
+    // updateXray() call (not per comparison) — cheap enough at this cadence
+    // and avoids recomputing matrixWorld-dependent transforms n^2 times.
+    function collectXraySpheres(): { mesh: THREE.Mesh; center: THREE.Vector3; radius: number; dist: number }[] {
+      const camPos = camera.position;
+      const entries: { mesh: THREE.Mesh; center: THREE.Vector3; radius: number; dist: number }[] = [];
+      for (const mesh of meshByPlacedId.values()) {
+        const piece = mesh.userData.piece as PieceEntry | undefined;
+        if (!piece) continue;
+        const { boundingSphere } = getPieceAssets(piece);
+        const center = boundingSphere.center.clone().applyMatrix4(mesh.matrixWorld);
+        entries.push({ mesh, center, radius: boundingSphere.radius, dist: camPos.distanceTo(center) });
+      }
+      entries.sort((a, b) => a.dist - b.dist);
+      return entries;
+    }
+
+    // For every piece, tests whether it lies on the line-of-sight between
+    // the camera and some OTHER, farther-away piece — pure sphere-vs-ray
+    // math (no triangle raycasting), so this stays cheap even run every
+    // ~150ms (see the xray throttle in animate() below) across the whole
+    // placed set: O(n^2) comparisons but each one is a handful of vector
+    // ops, not a scene raycast. A piece found to be in the way of ANY
+    // farther piece gets faded — that's what reveals the "back most" pieces
+    // from whatever angle the camera is currently at.
+    function updateXray() {
+      if (!showXray) {
+        for (const mesh of meshByPlacedId.values()) {
+          if (mesh.userData.opacity === 1) continue;
+          const piece = mesh.userData.piece as PieceEntry;
+          applyMeshAppearance(mesh, piece, mesh.userData.color, 1);
+        }
+        return;
+      }
+
+      const camPos = camera.position;
+      ensureFreshMatrices();
+      const entries = collectXraySpheres();
+      const occluding = new Set<THREE.Mesh>();
+
+      for (let i = 0; i < entries.length; i++) {
+        const near = entries[i];
+        for (let j = i + 1; j < entries.length; j++) {
+          const far = entries[j];
+          const toFar = far.center.clone().sub(camPos);
+          const farDist = toFar.length();
+          if (farDist < 1e-6) continue;
+          const dir = toFar.divideScalar(farDist);
+          const t = near.center.clone().sub(camPos).dot(dir);
+          if (t <= 0 || t >= farDist - far.radius) continue; // not between camera and far's surface
+          const closest = camPos.clone().addScaledVector(dir, t);
+          if (closest.distanceTo(near.center) < near.radius) {
+            occluding.add(near.mesh);
+            break; // near already known to occlude something — no need to check further
+          }
+        }
+      }
+
+      for (const entry of entries) {
+        const isOccluding = occluding.has(entry.mesh);
+        const desiredOpacity = isOccluding ? XRAY_FILL_OPACITY : 1;
+        if (entry.mesh.userData.opacity === desiredOpacity) continue;
+        const piece = entry.mesh.userData.piece as PieceEntry;
+        applyMeshAppearance(
+          entry.mesh,
+          piece,
+          entry.mesh.userData.color,
+          desiredOpacity,
+          isOccluding ? XRAY_OUTLINE_OPACITY : 1
+        );
+      }
     }
 
     // --- Ghost preview ---
@@ -624,6 +728,10 @@
     $effect(() => {
       placedPieces; // register dependency
       syncPlacedPieces();
+      // untrack: showXray's own $effect above already handles toggling;
+      // reading it tracked here would make placedPieces changes and
+      // showXray toggles both re-run this whole effect redundantly.
+      if (untrack(() => showXray)) updateXray();
     });
     $effect(() => {
       // Toggling outlines doesn't need to touch geometry or materials at
@@ -640,12 +748,33 @@
         if (outline) outline.visible = showOutlines;
       }
     });
+    $effect(() => {
+      showXray; // register dependency — respond to the toggle immediately
+      // rather than waiting for the next throttled tick in animate() below.
+      updateXray();
+    });
 
     const clock = new THREE.Clock();
     let frameId: number;
+    // Recomputed on a throttle, not every frame — it's O(n^2) over placed
+    // pieces and only needs to track camera movement, which itself only
+    // meaningfully changes a few times per second from a human dragging/
+    // panning. This still runs from inside animate() (rather than e.g. only
+    // on OrbitControls' 'change' event) so it also tracks WASD panning, which
+    // moves the camera without going through OrbitControls at all.
+    const XRAY_INTERVAL = 0.15; // seconds
+    let xrayAccum = 0;
     function animate() {
       frameId = requestAnimationFrame(animate);
       const dt = clock.getDelta();
+
+      if (showXray) {
+        xrayAccum += dt;
+        if (xrayAccum >= XRAY_INTERVAL) {
+          xrayAccum = 0;
+          updateXray();
+        }
+      }
 
       if (panKeys.size > 0) {
         const forward = new THREE.Vector3();
@@ -706,6 +835,9 @@
   <div class="camera-presets">
     <button class:active={showOutlines} onclick={() => (showOutlines = !showOutlines)}>
       Outlines
+    </button>
+    <button class:active={showXray} onclick={() => (showXray = !showXray)}>
+      X-Ray
     </button>
     <button onclick={() => setPreset('iso')}>Iso</button>
     <button onclick={() => setPreset('top')}>Top</button>
