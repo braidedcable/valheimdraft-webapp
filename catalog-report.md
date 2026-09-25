@@ -10,10 +10,7 @@
 | 2 | NEEDS_NEW_SHAPE | 14 |
 | 2 | SUSPICIOUS | 1 |
 | 2 | REVIEW | 10 |
-| 3 | CLEAN | 40 |
-| 3 | NEEDS_NEW_SHAPE | 1 |
-| 3 | SUSPICIOUS | 3 |
-| 3 | REVIEW | 1 |
+| 3 | CLEAN | 45 |
 
 ## Batch 0 (shipped)
 
@@ -196,17 +193,15 @@
 
 | Prefab | Label | Family | Shape | Verdict | Reason |
 |---|---|---|---|---|---|
-| piece_hexagonal_door | Hexagonal Gate | dvergr | — | NEEDS_NEW_SHAPE | functional piece (name matches door|gate|grate|window|shutter|hatch|arch) — must not render as a plain box |
-| piece_drawbridge | Timberwood Drawbridge | misc | — | SUSPICIOUS | oversized: a bounds axis exceeds 6m |
-| piece_drawbridge_log | Rustic Drawbridge | misc | — | SUSPICIOUS | oversized: a bounds axis exceeds 6m |
-| stave_gate | Timberwood Gate | timberwood | — | SUSPICIOUS | oversized: a bounds axis exceeds 6m |
-| stave_wall_2x2 | Timber Wall | timberwood | — | REVIEW | 6 snap points, unrecognized pattern |
 | crystal_wall_1x1 | Crystal Wall 1x1 | misc | box | CLEAN | 4 corners, height split 2/2 but no depth correlation — plain wall, not a slope |
 | hearth | Hearth | misc | box | CLEAN | 8 corner snap points — full box |
+| piece_drawbridge | Timberwood Drawbridge | misc | box | CLEAN | Timberwood Drawbridge; genuinely large (6.5x11.7x4.6, tower+deck mechanism), not a data bug. Its 6 snap points are 3 distinct Y levels x 2 Z positions at a fixed X (a hinge/mount rig), which doesn't match any recognized flat-shape pattern (not a box corner set, not a ridge). A drawbridge is a complex hinged mechanism with no dedicated shape; box is a crude but reasonable first-pass footprint, same 'ship an approximation, flag for later' approach as other functional pieces without a bespoke shape. |
+| piece_drawbridge_log | Rustic Drawbridge | misc | box | CLEAN | Rustic Drawbridge; see piece_drawbridge — same 3-Y-level/2-Z hinge-rig snap pattern (scaled down, 4.3x6.9x2.7), same box-approximation reasoning. |
 | piece_dvergr_metal_wall_2x2 | Dvergr Metal Wall | dvergr | box | CLEAN | 4 corners, height split 2/2 but no depth correlation — plain wall, not a slope |
 | piece_dvergr_spiralstair | Dvergr Spiral Staircase Left | dvergr | stairs | CLEAN | functional piece (stair) — using the existing stairs shape |
 | piece_dvergr_spiralstair_right | Dvergr Spiral Staircase Right | dvergr | stairs | CLEAN | functional piece (stair) — using the existing stairs shape |
 | piece_dvergr_stake_wall | Dvergr Stakewall | dvergr | box | CLEAN | 4 corners, height split 2/2 but no depth correlation — plain wall, not a slope |
+| piece_hexagonal_door | Hexagonal Gate | dvergr | door | CLEAN | Hexagonal Gate; only 2 snap points (top/bottom centerline) so classify() can't tell it's a gate from pattern alone — matches the functional-name rule. Real hexagonal frame isn't modeled (no hexagon shape exists), plain rectangular door frame is an approximation. Width (3.94m) is close to double darkwood_gate's, so leaves:2 like darkwood_gate/stave_gate rather than a single wide leaf. |
 | piece_icecube | Ice Block | misc | box | CLEAN | 8 corner snap points — full box |
 | scale_halfwall_1x2 | Scalewood Half Wall | scalewood | box | CLEAN | 4 corners, height split 2/2 but no depth correlation — plain wall, not a slope |
 | scale_quarterwall_1x1 | Scalewood Quarter Wall | scalewood | box | CLEAN | 4 corners, height split 2/2 but no depth correlation — plain wall, not a slope |
@@ -235,8 +230,10 @@
 | stave_deco_beam_67 | Decorated Timber Beam 67° | timberwood | beam | CLEAN | snap-derived: 2 diagonal snap points |
 | stave_deco_pole_2m | Decorated Timber Pole 2m | timberwood | box | CLEAN | 2 snap points on one axis |
 | stave_deco_wall_2x2 | Lathed Timber Wall | timberwood | box | CLEAN | 4 corners, height split 2/2 but no depth correlation — plain wall, not a slope |
+| stave_gate | Timberwood Gate | timberwood | door | CLEAN | Timberwood Gate; 5 snap points at x=(1,0)/(-1,0)/(1,6)/(-1,6)/(1,3) are the exact same topology as darkwood_gate's (1,0)/(-1,0)/(1,4)/(-1,4)/(1,2) — a gate frame, just taller (6.44m, over the 6m oversized cutoff, which is real: this is a tall stave-church-style gate). Treated like darkwood_gate: shape door, leaves 2, sized from its own bounds. |
 | stave_pole_2m | Timber Pole 2m | timberwood | cylinder | CLEAN | 2 vertical snap points, round cross-section |
 | stave_pole_4m | Timber Pole 4m | timberwood | cylinder | CLEAN | 2 vertical snap points, round cross-section |
+| stave_wall_2x2 | Timber Wall | timberwood | box | CLEAN | Timber Wall; 6 snap points are x=(1,0,-1) at y=1 and x=(1,0,-1) at y=-1 — i.e. the standard 4-corner wall pattern (x=+-1, y=+-1, z=0 for all, no depth correlation) PLUS an extra mid-span point at x=0 on each row (likely a sub-snap target for narrower pieces to dock at the wall's middle). All 6 points share z=0, so this is unambiguously a plain flat wall, not a roof/ridge piece — classify()'s 6-point branch only recognizes the eave(4)/ridge(2) roof pattern, so this 3/3 wall split falls through to REVIEW. Forced to box, consistent with every other 4-corner flat wall in the catalog. |
 | stave_wall_cross_26 | Timber Roof Cross 26° | timberwood | cross | CLEAN | snap-derived: 5 snap points (4 corners + center) — X truss |
 | stave_wall_cross_45 | Timber Roof Cross 45° | timberwood | cross | CLEAN | snap-derived: 5 snap points (4 corners + center) — X truss |
 | stave_wall_cross_67 | Timber Roof Cross 67° | timberwood | cross | CLEAN | snap-derived: 5 snap points (4 corners + center) — X truss |
