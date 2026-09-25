@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { heightWeightedDepth, xraySliceCutoff, zoomSliceFraction } from './xray';
+import { heightWeightedDepth, isInEdgeBand, xraySliceCutoff, zoomSliceFraction } from './xray';
 
 describe('zoomSliceFraction', () => {
   it('slices nothing when the nearest piece is still far from the camera', () => {
@@ -63,5 +63,28 @@ describe('heightWeightedDepth', () => {
     const separation = heightWeightedDepth(20, 0) - heightWeightedDepth(20, 2.1);
     expect(separation).toBeGreaterThan(1);
     expect(separation).toBeLessThan(12); // well under the 24-unit total zoom-range span
+  });
+});
+
+describe('isInEdgeBand', () => {
+  it('is false dead center', () => {
+    expect(isInEdgeBand(0, 0)).toBe(false);
+  });
+
+  it('is false throughout most of the middle of the screen', () => {
+    expect(isInEdgeBand(0.5, 0.5)).toBe(false);
+    expect(isInEdgeBand(0.74, 0)).toBe(false);
+    expect(isInEdgeBand(0, -0.74)).toBe(false);
+  });
+
+  it('is true right at and beyond the edge threshold, on either axis independently', () => {
+    expect(isInEdgeBand(0.75, 0)).toBe(true);
+    expect(isInEdgeBand(0, -0.75)).toBe(true);
+    expect(isInEdgeBand(0.9, 0)).toBe(true);
+    expect(isInEdgeBand(-1, 0.2)).toBe(true); // clamped-range NDC edge/corner
+  });
+
+  it('is true in a screen corner (both axes past the threshold)', () => {
+    expect(isInEdgeBand(0.8, 0.8)).toBe(true);
   });
 });

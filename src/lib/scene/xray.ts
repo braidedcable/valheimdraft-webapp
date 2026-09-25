@@ -100,3 +100,21 @@ const HEIGHT_WEIGHT = 2;
 export function heightWeightedDepth(rawDepth: number, relativeHeight: number): number {
   return rawDepth - HEIGHT_WEIGHT * relativeHeight;
 }
+
+// How much of the screen (in normalized device coordinates, [-1, 1] per
+// axis) is the "clear center" that faded pieces never render into at all —
+// leaves the middle of the view completely unobstructed while a border
+// strip still shows a hint that there's more hidden geometry out there. Not
+// a true per-pixel effect (that would need a custom shader — meaningfully
+// more risk/complexity for a "quick fix", and much harder to verify without
+// eyeballing rendered screenshots); this instead classifies each faded
+// piece as a whole by where its own position projects to on screen, which
+// is enough for the intended "peripheral hint" effect at normal piece
+// sizes. 0.75 means only the outer ~25% NDC band, near the screen edges on
+// either axis, ever shows a faded piece.
+const CENTER_CLEAR_NDC = 0.75;
+
+/** Whether a screen position (NDC, [-1, 1] per axis) falls in the outer band where faded pieces are still shown. */
+export function isInEdgeBand(ndcX: number, ndcY: number): boolean {
+  return Math.max(Math.abs(ndcX), Math.abs(ndcY)) >= CENTER_CLEAR_NDC;
+}

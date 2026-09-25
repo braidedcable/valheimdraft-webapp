@@ -5,7 +5,7 @@
   import { geometryForPiece, DOUBLE_SIDED_SHAPES } from './scene/geometry';
   import { colorForFamily, contrastingOutlineColor } from './scene/materials';
   import { getPieceData, snapPositionAlongRay, type PieceEntry } from './scene/snapping';
-  import { heightWeightedDepth, xraySliceCutoff, zoomSliceFraction } from './scene/xray';
+  import { heightWeightedDepth, isInEdgeBand, xraySliceCutoff, zoomSliceFraction } from './scene/xray';
   import type { PlacedPiece } from './types';
 
   let { selectedPrefab = $bindable(null), placedPieces = $bindable([]), onUndo, onRedo }: {
@@ -319,6 +319,12 @@
       const camPos = camera.position;
       const viewDir = new THREE.Vector3();
       camera.getWorldDirection(viewDir); // normalized, camera -> into the scene
+      // camera.matrixWorldInverse (needed below by Vector3.project) is only
+      // refreshed by THREE during renderer.render() — this can run earlier
+      // in the same frame (or from the immediate on-toggle $effect, outside
+      // the render loop entirely), so force it current now rather than
+      // projecting against a stale, previous-frame camera transform.
+      camera.updateMatrixWorld();
 
       // mesh.position is already the piece's true mesh-bounds center in
       // world space (positionMesh offsets it by piece.center on placement),
@@ -365,10 +371,24 @@
 
       for (const mesh of meshes) {
         const isFrontHalf = depthByMesh.get(mesh)! < cutoff;
-        const desiredOpacity = isFrontHalf ? XRAY_FILL_OPACITY : 1;
-        if (mesh.userData.opacity === desiredOpacity) continue;
+        let desiredOpacity = 1;
+        let desiredOutlineOpacity = 1;
+        if (isFrontHalf) {
+          // A faded piece only actually shows (at its normal faded look)
+          // near the screen edges — dead center, where you're actually
+          // looking, it's fully invisible instead, not just faded. Per
+          // direct feedback: the ghost fill was still showing up in the
+          // middle of the view even after the earlier tuning passes, which
+          // is exactly where you don't want any x-ray clutter while you're
+          // trying to build; the edges are enough to hint there's more.
+          const ndc = mesh.position.clone().project(camera);
+          const showGhost = isInEdgeBand(ndc.x, ndc.y);
+          desiredOpacity = showGhost ? XRAY_FILL_OPACITY : 0;
+          desiredOutlineOpacity = showGhost ? XRAY_OUTLINE_OPACITY : 0;
+        }
+        if (mesh.userData.opacity === desiredOpacity && mesh.userData.outlineOpacity === desiredOutlineOpacity) continue;
         const piece = mesh.userData.piece as PieceEntry;
-        applyMeshAppearance(mesh, piece, mesh.userData.color, desiredOpacity, isFrontHalf ? XRAY_OUTLINE_OPACITY : 1);
+        applyMeshAppearance(mesh, piece, mesh.userData.color, desiredOpacity, desiredOutlineOpacity);
       }
     }
 
