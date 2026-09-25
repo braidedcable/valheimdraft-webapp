@@ -466,6 +466,14 @@ range than when these were last tuned:**
 - `SNAP_RADIUS`/`RAY_SNAP_REACH` (`snapping.ts`) were tuned against ~2m
   wood-tier pieces; the catalog now spans tiny iron cage pieces to 6m+
   drawbridges and hasn't been re-tested at either extreme.
+- **Known bug, flagged by direct feedback (2026-09-25), not yet
+  investigated:** the `ridge` shape (roof ridge caps — `ridgeGeometry()` in
+  `scene/geometry.ts`) renders incorrect geometry. Consistent with that
+  function's own existing "NOT visually verified — this environment has no
+  browser" comment; likely a wrong guess now confirmed wrong by actually
+  looking at it, not a regression. Next time this is picked up: render one
+  in a real browser and compare against the actual in-game mesh before
+  re-deriving the shape math.
 
 **Features:**
 - Duplicate/clone a placed piece (right-click or a shortcut), instead of
@@ -1261,3 +1269,110 @@ screenshots (front-view) confirming every new `arch`/`door`/`lattice` piece
 across both batches — including the three new doors/gates
 (`piece_hexagonal_door`, `stave_gate`, `ashwood_door`) and the grausten
 archways — reads correctly rather than as a plain box.
+
+---
+
+## X-Ray (cutaway) view — shipped (post-MVP, 2026-09-25)
+
+An "X-Ray" toggle next to the existing Outlines toggle (`src/lib/Viewport.svelte`,
+`src/lib/scene/xray.ts`), for building inside an already-enclosed shell
+without deleting or hiding walls/roof first. Off by default. Several design
+iterations, each driven by direct feedback rather than guessed up front —
+summarized here so the reasoning isn't lost, since more than one earlier
+approach was tried and dropped.
+
+**What it does:** a spatial depth cutaway, not per-piece occlusion testing
+or piece-type classification. Every placed piece gets one "depth" number —
+distance along the camera's current view direction, biased by how far above
+the build's lowest piece it sits (`heightWeightedDepth`) — and anything
+below a zoom-dependent cutoff (`zoomSliceFraction` + `xraySliceCutoff`)
+fades to a faint fill with a more-visible outline. Recomputed on a ~150ms
+throttle plus immediately on toggle/piece changes, so it tracks camera
+orbit/pan/zoom.
+
+**Why not classify pieces by type (wall/floor/roof/fence):** tried twice,
+dropped both times.
+1. Name-matching against the prefab id (`/wall|floor|roof|fence/i`) had real
+   false positives — "Log Beam" (`wood_wall_log`) and the Ashwood Beam
+   pieces (`ashwood_wall_beam_*`) contain "wall" despite being beams.
+2. A from-scratch bounds-ratio geometry classifier (thin flat panel vs. rod)
+   would have avoided that, but added real complexity for a use case
+   (`should doors/gates fade too?`) that didn't have a clean answer either.
+
+The eventual fix for "fade roofs/ceilings before same-story floors, reveal
+lower stories on further zoom" needed **no classification at all** — just
+`heightWeightedDepth` biasing the existing depth number by world height. A
+roof is normally the highest thing in its story, so it naturally crosses
+the fade threshold first; the story's own floor (no bias, since it's the
+height reference) fades last; deeper zoom reaches the story below. Real
+piece sizes (`~2.1m` wall height) drove the tuning.
+
+**Zoom tuning went through two real bugs, both found by direct
+simulation/live verification before shipping, not guessed:**
+- V1 normalized the zoom threshold against the whole build's own bounding
+  radius (`camDist / structureRadius`), on the theory that a shed and a
+  castle should both start slicing at a comparable *relative* zoom. Wrong:
+  Valheim pieces are a fixed real-world size regardless of build size, so
+  that ratio required the camera within ~1.2x the build's own radius of the
+  target — never true for any realistically-sized build at the default Iso
+  view (camera ~24 units out), so x-ray did **nothing** under ordinary use.
+  Fixed by switching to a plain absolute-distance threshold against the
+  nearest piece's own depth (`DEPTH_NO_SLICE`/`DEPTH_MAX_SLICE`, currently
+  26/2 world units) — no notion of "the whole build's size" needed.
+- Wiring `heightWeightedDepth`'s biased depth directly into
+  `zoomSliceFraction` created a feedback loop: a tall roof's height bias
+  alone (at an unchanged camera distance) dragged the zoom-progress signal
+  down, which read as "zoomed in a lot" and over-sliced everything at once
+  — increasing the height weight made this *worse*, confirmed by direct
+  math simulation before touching the browser. Fixed by decoupling:
+  `zoomSliceFraction` takes the raw, unbiased nearest-piece depth (real
+  camera proximity only); the biased depths are used solely for the cutoff
+  range and per-piece classification.
+
+**Screen-space refinement:** faded pieces only render their ghost look
+within the outer ~25% of the screen by normalized device coordinates
+(`isInEdgeBand`) — dead center, where you're actually looking, a faded
+piece is fully invisible instead. Approximated per-piece (each faded piece
+classified as a whole by where its own position projects to screen space),
+not a true per-pixel shader effect — deliberately, to keep this a "quick
+fix" rather than custom shader work, and to keep it verifiable without
+pixel-level screenshot inspection.
+
+**Also fixed along the way:**
+- Raycasting (hover/click/middle-click-delete/ghost-resting-surface) and
+  placement snap targets now both skip faded pieces
+  (`raycastableMeshes()`, the `snapTargets` filter in
+  `updateGhostPosition()`) — otherwise clicking "through" a faded near wall
+  selected or snapped to the invisible piece instead of whatever's actually
+  visible behind it.
+- `OrbitControls.zoomSpeed` lowered from the default 1 to 0.5, so each
+  scroll notch moves the camera a smaller distance — with x-ray on, that's
+  what keeps the depth cutoff sweeping past individually-spaced pieces one
+  at a time instead of flipping several at once in a single notch.
+- `Vector3.project(camera)` (used for the screen-space check above) needs
+  `camera.matrixWorldInverse`, which THREE only refreshes during
+  `renderer.render()` — `camera.updateMatrixWorld()` is now forced before
+  projecting, same pattern as the existing `ensureFreshMatrices()` used for
+  raycasting, so it never projects against a stale camera transform.
+
+**Testing infrastructure added along the way (reusable going forward):**
+the zoom/depth/height/screen-space math lives in `src/lib/scene/xray.ts` as
+a pure, THREE-free module (same split as `catalog/derive.ts`), covered by
+vitest (`xray.test.ts`) — tuning changes no longer need a browser
+round-trip to verify. A dev-only `window.__valheimdraft_debug__` hook
+(stripped from production builds) exposes live per-piece opacity/color and
+camera state for fast, numeric browser verification instead of screenshot
+inspection. Together these cut a full browser-driven verification pass from
+minutes to seconds.
+
+**Not done / possible follow-ups (untriaged, not added to Backlog's
+numbered list since none of this was asked for yet):**
+- The screen-space edge band is a fixed 25%, not user-configurable.
+- No smoothing/feathering at either the depth cutoff or the screen-space
+  edge boundary — both are hard per-piece thresholds, which is fine at
+  normal piece density but could read as a visible "pop" for a very large,
+  densely-packed build.
+- Tuning constants (`DEPTH_NO_SLICE`, `DEPTH_MAX_SLICE`, `MAX_SLICE_FRACTION`,
+  `HEIGHT_WEIGHT`, `CENTER_CLEAR_NDC`) are all hand-tuned against a handful
+  of synthetic test scenes, not against a real, fully-furnished multi-story
+  build — worth revisiting once one exists.
