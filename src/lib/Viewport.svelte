@@ -5,6 +5,7 @@
   import { geometryForPiece, DOUBLE_SIDED_SHAPES } from './scene/geometry';
   import { colorForFamily, contrastingOutlineColor } from './scene/materials';
   import { getPieceData, snapPositionAlongRay, type PieceEntry } from './scene/snapping';
+  import { boundingRadius, xraySliceCutoff, zoomSliceFraction } from './scene/xray';
   import type { PlacedPiece } from './types';
 
   let { selectedPrefab = $bindable(null), placedPieces = $bindable([]), onUndo, onRedo }: {
@@ -280,20 +281,20 @@
 
     // A spatial cutaway, not a per-piece occlusion test: project every
     // placed piece's position onto the camera's current view direction,
-    // split that range at its midpoint, and fade everything nearer than the
-    // midpoint while leaving everything farther fully opaque — literally
-    // slicing the build in half between camera and back, independent of
-    // what any individual piece is. This also means "front/back" reslices
-    // itself to "floor/roof" for free when looking straight down (or any
-    // other axis) — it's whatever the camera currently happens to be
-    // looking along, not a fixed world axis.
+    // then fade everything nearer than a cutoff depth (see zoom mapping
+    // above) while leaving everything farther fully opaque — literally
+    // slicing the build between camera and back, independent of what any
+    // individual piece is. This also means "front/back" reslices itself to
+    // "floor/roof" for free when looking straight down (or any other axis)
+    // — it's whatever the camera currently happens to be looking along, not
+    // a fixed world axis.
     //
     // Piece-type classification (walls vs. beams vs. furniture) was tried
     // and dropped: name-matching had false positives (e.g. "Log Beam"
     // prefabs contain "wall") and a from-scratch geometry classifier was
     // more complexity than the payoff justified. A plain depth slice needs
-    // none of that and gives a more predictable "front half becomes see-
-    // through" result the user can reason about while orbiting.
+    // none of that and gives a more predictable result the user can reason
+    // about while orbiting/zooming.
     function updateXray() {
       if (!showXray) {
         for (const mesh of meshByPlacedId.values()) {
@@ -324,10 +325,17 @@
         if (depth < depthMin) depthMin = depth;
         if (depth > depthMax) depthMax = depth;
       }
-      const midpoint = (depthMin + depthMax) / 2;
+
+      // How much of the depth range actually gets sliced is zoom-dependent
+      // — see scene/xray.ts's module comment for why and its tests for the
+      // tuning itself; this file only wires the live camera/scene state
+      // (positions, camera-to-target distance) into that pure math.
+      const structureRadius = boundingRadius(meshes.map((mesh) => mesh.position));
+      const sliceFraction = zoomSliceFraction(camPos.distanceTo(controls.target), structureRadius);
+      const cutoff = xraySliceCutoff(depthMin, depthMax, sliceFraction);
 
       for (const mesh of meshes) {
-        const isFrontHalf = depthByMesh.get(mesh)! < midpoint;
+        const isFrontHalf = depthByMesh.get(mesh)! < cutoff;
         const desiredOpacity = isFrontHalf ? XRAY_FILL_OPACITY : 1;
         if (mesh.userData.opacity === desiredOpacity) continue;
         const piece = mesh.userData.piece as PieceEntry;
@@ -382,6 +390,18 @@
       placedGroup.updateMatrixWorld(true);
     }
 
+    // Faded-to-near-invisible x-ray pieces (see updateXray above) should
+    // never be the thing the cursor lands on — without this, hovering/
+    // clicking through them to reach the room you're actually looking into
+    // instead picks up or snaps against the invisible near-half piece, or
+    // places against it as if it were still the nearest solid surface.
+    // Excluding them from the raycast set entirely (rather than e.g.
+    // filtering hits after the fact) also lets a real hit further back win
+    // outright, the same as if the faded piece weren't there at all.
+    function raycastableMeshes(): THREE.Object3D[] {
+      return placedGroup.children.filter((child) => (child.userData.opacity ?? 1) === 1);
+    }
+
     // Ground + already-placed pieces, sorted by distance from the camera —
     // used to find where the ghost should rest. Combining the two (rather
     // than ground alone) lets the ghost land on top of a placed piece, not
@@ -398,7 +418,7 @@
     function raycastGroundAndPlaced(): { point: THREE.Vector3; hitPlacedId: string | null } | null {
       ensureFreshMatrices();
       raycaster.setFromCamera(pointerNdc, camera);
-      const hits = raycaster.intersectObjects([ground, ...placedGroup.children], false);
+      const hits = raycaster.intersectObjects([ground, ...raycastableMeshes()], false);
       if (hits.length === 0) return null;
       const hitPlacedId = (hits[0].object.userData.placedId as string | undefined) ?? null;
       return { point: hits[0].point.clone(), hitPlacedId };
@@ -407,7 +427,7 @@
     function raycastPlaced(): THREE.Object3D | null {
       ensureFreshMatrices();
       raycaster.setFromCamera(pointerNdc, camera);
-      const hits = raycaster.intersectObjects(placedGroup.children, false);
+      const hits = raycaster.intersectObjects(raycastableMeshes(), false);
       return hits.length > 0 ? hits[0].object : null;
     }
 
@@ -437,8 +457,17 @@
       tentativePos.y = surfaceHit.point.y + piece.bounds.y / 2 - piece.center.y;
 
       // Exclude the piece currently being moved from its own snap targets
-      // — otherwise it'd snap to its own pre-move position.
-      const snapTargets = movingPieceId ? placedPieces.filter((p) => p.id !== movingPieceId) : placedPieces;
+      // — otherwise it'd snap to its own pre-move position. Also exclude
+      // whatever's currently faded out by x-ray: snapPositionAlongRay works
+      // off the placedPieces DATA array, not the raycast-visible meshes
+      // above, so without this a faded (invisible) near piece could still
+      // win the snap and place the new piece against it instead of against
+      // whatever's actually visible in the room being built into.
+      const snapTargets = placedPieces.filter((p) => {
+        if (p.id === movingPieceId) return false;
+        const mesh = meshByPlacedId.get(p.id);
+        return (mesh?.userData.opacity ?? 1) === 1;
+      });
       // raycaster.ray reflects the setFromCamera() call inside
       // raycastGroundAndPlaced() above — still valid here since nothing
       // between there and here re-runs setFromCamera with different args.
@@ -738,12 +767,13 @@
 
     const clock = new THREE.Clock();
     let frameId: number;
-    // Recomputed on a throttle, not every frame — it's O(n^2) over placed
-    // pieces and only needs to track camera movement, which itself only
-    // meaningfully changes a few times per second from a human dragging/
-    // panning. This still runs from inside animate() (rather than e.g. only
-    // on OrbitControls' 'change' event) so it also tracks WASD panning, which
-    // moves the camera without going through OrbitControls at all.
+    // Recomputed on a throttle, not every frame — cheap (O(n) over placed
+    // pieces) but pointless to redo 60x/sec when it only needs to track
+    // camera movement, which itself only meaningfully changes a few times
+    // per second from a human dragging/panning. This still runs from inside
+    // animate() (rather than e.g. only on OrbitControls' 'change' event) so
+    // it also tracks WASD panning, which moves the camera without going
+    // through OrbitControls at all.
     const XRAY_INTERVAL = 0.15; // seconds
     let xrayAccum = 0;
     function animate() {
@@ -781,6 +811,30 @@
       renderer.render(scene, camera);
     }
     animate();
+
+    // Dev-only inspection hook: browser-driven testing/verification (e.g.
+    // Playwright) needs to read real internal scene state — which pieces
+    // are currently x-ray-faded, the live camera/target — without
+    // screenshotting and eyeballing it, or hand-patching a throwaway hook
+    // into this file for one test run and remembering to remove it after.
+    // Stripped from production builds (import.meta.env.DEV), so this never
+    // ships or leaks scene internals to real users.
+    if (import.meta.env.DEV) {
+      (window as unknown as { __valheimdraft_debug__: unknown }).__valheimdraft_debug__ = {
+        getPlacedState: () =>
+          [...meshByPlacedId.entries()].map(([id, mesh]) => ({
+            id,
+            prefab: (mesh.userData.piece as PieceEntry).prefab,
+            opacity: mesh.userData.opacity as number,
+            outlineOpacity: mesh.userData.outlineOpacity as number,
+            color: mesh.userData.color as number,
+          })),
+        getCamera: () => ({
+          position: camera.position.toArray(),
+          target: controls.target.toArray(),
+        }),
+      };
+    }
 
     function handleResize() {
       camera.aspect = canvas.clientWidth / canvas.clientHeight;
