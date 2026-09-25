@@ -39,9 +39,17 @@ function stairsGeometry(width: number, height: number, depth: number): THREE.Buf
   const stepHeight = height / STEP_COUNT;
   const stepDepth = depth / STEP_COUNT;
 
+  // Profile spans y in [-height/2, height/2], not [0, height] — every other
+  // shape in this file is built centered on local zero (see roofCornerGeometry's
+  // comment: "Heights span ±height/2 around local origin"), because
+  // positionMesh() offsets by piece.center assuming exactly that. A
+  // [0, height] profile silently shifted the whole staircase up by
+  // height/2 in world space — the top tread ended up well above where a
+  // floor piece at the actual landing height sits.
+  const baseY = -height / 2;
   const shape = new THREE.Shape();
   let z = -depth / 2;
-  let y = 0;
+  let y = baseY;
   shape.moveTo(z, y);
   for (let i = 0; i < STEP_COUNT; i++) {
     y += stepHeight;
@@ -49,7 +57,7 @@ function stairsGeometry(width: number, height: number, depth: number): THREE.Buf
     z += stepDepth;
     shape.lineTo(z, y); // tread
   }
-  shape.lineTo(z, 0); // back face down to the base
+  shape.lineTo(z, baseY); // back face down to the base
   shape.closePath(); // back along the base to the start
 
   const geometry = new THREE.ExtrudeGeometry(shape, { depth: width, bevelEnabled: false, curveSegments: 1 });
