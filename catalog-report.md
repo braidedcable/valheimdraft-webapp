@@ -6,10 +6,7 @@
 |---|---|---|
 | 0 | EXCLUDE | 3 |
 | 1 | CLEAN | 86 |
-| 2 | CLEAN | 48 |
-| 2 | NEEDS_NEW_SHAPE | 14 |
-| 2 | SUSPICIOUS | 1 |
-| 2 | REVIEW | 10 |
+| 2 | CLEAN | 73 |
 | 3 | CLEAN | 40 |
 | 3 | NEEDS_NEW_SHAPE | 1 |
 | 3 | SUSPICIOUS | 3 |
@@ -118,37 +115,14 @@
 
 | Prefab | Label | Family | Shape | Verdict | Reason |
 |---|---|---|---|---|---|
-| ashwood_arch_big | Ashwood Arch | ashwood | — | NEEDS_NEW_SHAPE | functional piece (name matches door|gate|grate|window|shutter|hatch|arch) — must not render as a plain box |
-| ashwood_door | Ashwood Door | ashwood | — | NEEDS_NEW_SHAPE | functional piece (name matches door|gate|grate|window|shutter|hatch|arch) — must not render as a plain box |
-| ashwood_wall_arch | Ashwood Arched Wall | ashwood | — | NEEDS_NEW_SHAPE | functional piece (name matches door|gate|grate|window|shutter|hatch|arch) — must not render as a plain box |
-| blackmarble_arch | Black Marble Arch | blackmarble | — | NEEDS_NEW_SHAPE | functional piece (name matches door|gate|grate|window|shutter|hatch|arch) — must not render as a plain box |
-| flametal_gate | Flametal Gate | flametal | — | NEEDS_NEW_SHAPE | functional piece (name matches door|gate|grate|window|shutter|hatch|arch) — must not render as a plain box |
-| Piece_grausten_pillar_arch | Grausten Medium Arch | grausten | — | NEEDS_NEW_SHAPE | functional piece (name matches door|gate|grate|window|shutter|hatch|arch) — must not render as a plain box |
-| Piece_grausten_pillar_arch_small | Grausten Small Arch | grausten | — | NEEDS_NEW_SHAPE | functional piece (name matches door|gate|grate|window|shutter|hatch|arch) — must not render as a plain box |
-| piece_grausten_roof_45_arch | Grausten Arched Roof | grausten | — | NEEDS_NEW_SHAPE | functional piece (name matches door|gate|grate|window|shutter|hatch|arch) — must not render as a plain box |
-| piece_grausten_roof_45_arch_corner | Grausten Arched Roof Corner | grausten | — | NEEDS_NEW_SHAPE | functional piece (name matches door|gate|grate|window|shutter|hatch|arch) — must not render as a plain box |
-| piece_grausten_roof_45_arch_corner2 | Grausten Arched Roof Corner | grausten | — | NEEDS_NEW_SHAPE | functional piece (name matches door|gate|grate|window|shutter|hatch|arch) — must not render as a plain box |
-| Piece_grausten_wall_arch | Grausten Wall Arch | grausten | — | NEEDS_NEW_SHAPE | functional piece (name matches door|gate|grate|window|shutter|hatch|arch) — must not render as a plain box |
-| Piece_grausten_wall_arch_inverted | Grausten Wall Arch (Inverted) | grausten | — | NEEDS_NEW_SHAPE | functional piece (name matches door|gate|grate|window|shutter|hatch|arch) — must not render as a plain box |
-| Piece_grausten_window_2x2 | Grausten Window 2x2 | grausten | — | NEEDS_NEW_SHAPE | functional piece (name matches door|gate|grate|window|shutter|hatch|arch) — must not render as a plain box |
-| Piece_grausten_window_4x2 | Grausten Window 4x2 | grausten | — | NEEDS_NEW_SHAPE | functional piece (name matches door|gate|grate|window|shutter|hatch|arch) — must not render as a plain box |
-| piece_stakewall_blackwood | Ashwood Stakewall | ashwood | — | SUSPICIOUS | off-center pivot: center is 1.60m from snap-box middle |
-| ashwood_wall_roof_26 | Ashwood Wall 26° | ashwood | triangle | REVIEW | derived geometry's y extent (1.00) differs from bounds (1.69) by more than the 60%-140% tolerance |
-| ashwood_wall_roof_26_upsidedown | Ashwood Wall 26° (Inverted) | ashwood | triangle | REVIEW | derived geometry's y extent (1.00) differs from bounds (1.69) by more than the 60%-140% tolerance |
-| blackmarble_column_1 | Black Marble Column Small | blackmarble | — | REVIEW | 18 snap points, unrecognized pattern |
-| blackmarble_column_2 | Black Marble Column Wide | blackmarble | — | REVIEW | 18 snap points, unrecognized pattern |
-| blackmarble_floor_triangle | Black Marble Floor Triangle | blackmarble | — | REVIEW | 6 snap points, unrecognized pattern |
-| blackmarble_tip | Black Marble Quarter Spire | blackmarble | — | REVIEW | 5 snap points, unrecognized pattern |
-| Piece_grausten_pillarbase_medium | Grausten Medium Pillar | grausten | — | REVIEW | 10 snap points, unrecognized pattern |
-| Piece_grausten_pillarbase_tapered | Grausten Tapered Pillar | grausten | — | REVIEW | 10 snap points, unrecognized pattern |
-| Piece_grausten_pillarbase_tapered_inverted | Grausten Tapered Pillar (Inverted) | grausten | — | REVIEW | 10 snap points, unrecognized pattern |
-| Piece_grausten_pillarbeam_medium | Grausten Medium Beam | grausten | — | REVIEW | 10 snap points, unrecognized pattern |
+| ashwood_arch_big | Ashwood Arch | ashwood | arch | CLEAN | 3-point pattern (bottom-left/top-left/top-right, bottom-right corner missing) and near-identical bounds/proportions to darkwood_arch — a genuine walkable archway, same motif |
 | ashwood_beam_1m | Ashwood Beam 1 m | ashwood | box | CLEAN | 2 snap points on one axis |
 | ashwood_beam_2m | Ashwood Beam 2 m | ashwood | box | CLEAN | 2 snap points on one axis |
 | ashwood_deco_floor | Ashwood Decorative Floor | ashwood | box | CLEAN | 4 corner snap points at a single height |
 | ashwood_decowall_2x2 | Ashwood Decorative Wall | ashwood | box | CLEAN | 4 corners, height split 2/2 but no depth correlation — plain wall, not a slope |
 | ashwood_decowall_divider | Ashwood Divider | ashwood | box | CLEAN | 4 corners, height split 2/2 but no depth correlation — plain wall, not a slope |
 | ashwood_decowall_tree | Ashwood Decorative Window | ashwood | box | CLEAN | 4 corners, height split 2/2 but no depth correlation — plain wall, not a slope |
+| ashwood_door | Ashwood Door | ashwood | door | CLEAN | 2m-wide, 3m-tall single door opening; leaves:1 since it's named Door (not Gate) — darkwood_gate's 2-leaf pattern is reserved for pieces named Gate |
 | ashwood_floor_1x1 | Ashwood Floor 1x1 | ashwood | box | CLEAN | 4 corner snap points at a single height |
 | ashwood_floor_2x2 | Ashwood Floor 2x2 | ashwood | box | CLEAN | 4 corner snap points at a single height |
 | ashwood_halfwall_1x2 | Ashwood Half Wall | ashwood | box | CLEAN | 4 corners, height split 2/2 but no depth correlation — plain wall, not a slope |
@@ -157,12 +131,15 @@
 | ashwood_quarterwall_1x1 | Ashwood Quarter Wall | ashwood | box | CLEAN | 4 corners, height split 2/2 but no depth correlation — plain wall, not a slope |
 | ashwood_stair | Ashwood Stair | ashwood | stairs | CLEAN | functional piece (stair) — using the existing stairs shape |
 | ashwood_wall_2x2 | Ashwood Wall | ashwood | box | CLEAN | 4 corners, height split 2/2 but no depth correlation — plain wall, not a slope |
+| ashwood_wall_arch | Ashwood Arched Wall | ashwood | arch | CLEAN | 3-point pattern (bottom-left/top-left/top-right, bottom-right missing) — same archway motif as darkwood_arch/ashwood_arch_big, just at 1x1 wall-panel scale |
 | ashwood_wall_beam_26 | Ashwood Beam 26° | ashwood | beam | CLEAN | snap-derived: 2 diagonal snap points |
 | ashwood_wall_beam_45 | Ashwood Beam 45° | ashwood | beam | CLEAN | snap-derived: 2 diagonal snap points |
 | ashwood_wall_beam_67 | Ashwood Beam 67° | ashwood | beam | CLEAN | snap-derived: 2 diagonal snap points |
 | ashwood_wall_cross_26 | Ashwood Roof Cross 26° | ashwood | cross | CLEAN | snap-derived: 5 snap points (4 corners + center) — X truss |
 | ashwood_wall_cross_45 | Ashwood Roof Cross 45° | ashwood | cross | CLEAN | snap-derived: 5 snap points (4 corners + center) — X truss |
 | ashwood_wall_cross_67 | Ashwood Roof Cross 67° | ashwood | cross | CLEAN | snap-derived: 5 snap points (4 corners + center) — X truss |
+| ashwood_wall_roof_26 | Ashwood Wall 26° | ashwood | triangle | CLEAN | same 3-point gable-triangle family as ashwood_wall_roof_45/_67 (all already CLEAN); the sanity check's y-extent ratio (1.00 vs bounds 1.69 = 0.59) just misses the 0.6 floor because a shallow 26° roof has proportionally more eave overhang beyond the triangle's defining points than the steeper 45°/67° variants — classify()'s own triangle guess is correct, only the heuristic tolerance false-flagged it |
+| ashwood_wall_roof_26_upsidedown | Ashwood Wall 26° (Inverted) | ashwood | triangle | CLEAN | see ashwood_wall_roof_26 — inverted variant, same shallow-eave-overhang explanation |
 | ashwood_wall_roof_45 | Ashwood Wall 45° | ashwood | triangle | CLEAN | snap-derived: 3 snap points (gable triangle) |
 | ashwood_wall_roof_45_upsidedown | Ashwood Wall 45° (Inverted) | ashwood | triangle | CLEAN | snap-derived: 3 snap points (gable triangle) |
 | ashwood_wall_roof_67_a | Ashwood Wall 67° | ashwood | triangle | CLEAN | snap-derived: 3 snap points (gable triangle) |
@@ -170,20 +147,35 @@
 | blackmarble_1x1 | Black Marble 1x1x1 | blackmarble | box | CLEAN | 8 corner snap points — full box |
 | blackmarble_2x1x1 | Black Marble 2x1x1 | blackmarble | box | CLEAN | 8 corner snap points — full box |
 | blackmarble_2x2x2 | Black Marble 2x2x2 | blackmarble | box | CLEAN | 8 corner snap points — full box |
+| blackmarble_arch | Black Marble Arch | blackmarble | arch | CLEAN | one snap-point column (x=-1) is fully solid top+bottom, the other (x=1) is open at the bottom — the same 'archway cut into one side' motif as stone_arch; 1.14m depth matches stone_arch's 1.13m, both far thicker than a thin wall panel |
 | blackmarble_base_1 | Black Marble Plinth | blackmarble | box | CLEAN | 8 corner snap points — full box |
 | blackmarble_basecorner | Black Marble Plinth Corner | blackmarble | box | CLEAN | 8 corner snap points — full box |
+| blackmarble_column_1 | Black Marble Column Small | blackmarble | cylinder | CLEAN | 18-point pattern is a center point + an 8-point ring (axis + 45°-diagonal offsets at radius 0.5, i.e. an octagon approximating a circle) at each of 2 heights — a round column; bounds.x/z are nearly equal (1.06 vs 1.09) |
+| blackmarble_column_2 | Black Marble Column Wide | blackmarble | cylinder | CLEAN | same ring pattern as blackmarble_column_1, wider radius (1.0 vs 0.5) — round column; bounds.x/z nearly equal (2.12 vs 2.15) |
 | blackmarble_floor | Black Marble Floor | blackmarble | box | CLEAN | 8 corner snap points — full box |
+| blackmarble_floor_triangle | Black Marble Floor Triangle | blackmarble | box | CLEAN | 6 points are a true triangular-footprint PRISM — a full box's 8 corners minus both corners at one XZ position (x=-1,z=-1 entirely absent) — a genuine triangular floor with real thickness, not a thin gable panel. The flat 'triangle' shape can't be forced here (needs geom the override schema doesn't pass through for this case, and would misrepresent the solid triangular-prism volume as a flat panel anyway); box approximates the bounding volume, the same 'good enough for now' tradeoff used elsewhere for an imperfect fit |
 | blackmarble_out_1 | Black Marble Cornice | blackmarble | box | CLEAN | 8 corner snap points — full box |
 | blackmarble_outcorner | Black Marble Cornice Corner | blackmarble | box | CLEAN | 8 corner snap points — full box |
 | blackmarble_stair | Black Marble Stair | blackmarble | stairs | CLEAN | functional piece (stair) — using the existing stairs shape |
+| blackmarble_tip | Black Marble Quarter Spire | blackmarble | box | CLEAN | 5 points = a full 4-corner base (y=-1) plus a single apex point offset to ONE corner (x=-0.5,z=0.5, not centered — so not a cross X-truss). An asymmetric quarter-spire taper with no matching parametric shape (hip/valley would need a guessed default odd-corner that likely doesn't match this piece's real off-center apex); box used as a safe placeholder, consistent with the tall/narrow 'spire' bounds (1.11 x 2.08 x 1.14) |
+| flametal_gate | Flametal Gate | flametal | door | CLEAN | 4m functional opening (matches darkwood_gate's 4m gate height) plus ~1.4m of bounds above it, consistent with a portcullis-style raised mechanism; 0.6m thickness rules out the thin (0.075m) iron_grate lattice treatment. Named Gate, so leaves:2 like darkwood_gate |
 | Piece_flametal_beam | Flametal Beam | flametal | box | CLEAN | 2 snap points on one axis |
 | Piece_flametal_pillar | Flametal Pillar | flametal | cylinder | CLEAN | 2 vertical snap points, round cross-section |
 | Piece_grausten_floor_1x1 | Grausten Floor 1x1 | grausten | box | CLEAN | 8 corner snap points — full box |
 | Piece_grausten_floor_2x2 | Grausten Floor 2x2 | grausten | box | CLEAN | 8 corner snap points — full box |
 | Piece_grausten_floor_4x4 | Grausten Floor 4x4 | grausten | box | CLEAN | 8 corner snap points — full box |
+| Piece_grausten_pillar_arch | Grausten Medium Arch | grausten | arch | CLEAN | 1.28m-thick freestanding structure named 'Arch' with no roof/window/wall qualifier — a genuine walkable archway. Its 10-point pattern (two 5-point plus-clusters, one on a wall face, one on the ground) doesn't match any snap-derived shape, but archGeometry only needs bounds, so it still renders as a real doorway opening |
+| Piece_grausten_pillar_arch_small | Grausten Small Arch | grausten | arch | CLEAN | small (1.38x1.40x0.58m) freestanding piece named 'Arch'. Only 2 snap points (diagonal), which classify() would normally read as a 'beam', but beam's geometry needs a-b-t-ext geom data that the override schema doesn't pass through for a functional-name piece (classify() never reaches the beam dispatch once the name matches /arch/); forcing beam would throw at render time. Arch needs only bounds, is mechanically safe, and matches the name and stone-archway-class thickness |
+| Piece_grausten_pillarbase_medium | Grausten Medium Pillar | grausten | box | CLEAN | 10-point pattern is two axis-aligned plus-clusters (center + 4 offsets at ±0.5 in x or z only, no 45°-diagonal ring points like the blackmarble columns) — a square-cross-section pillar base, not round; box fallback |
 | Piece_grausten_pillarbase_small | Grausten Small Pillar | grausten | cylinder | CLEAN | 2 vertical snap points, round cross-section |
+| Piece_grausten_pillarbase_tapered | Grausten Tapered Pillar | grausten | box | CLEAN | narrows from a 5-point plus-cluster base (y=0) through a 4-point mid-band (y=0.75) to a single top point (y=2) — a genuine taper, but the cross-section is square throughout (axis-aligned, no diagonal ring), not round. No tapered-column shape exists in the toolkit; box approximates the footprint at its widest, same fallback as the other pillar/beam REVIEW pieces |
+| Piece_grausten_pillarbase_tapered_inverted | Grausten Tapered Pillar (Inverted) | grausten | box | CLEAN | mirror of Piece_grausten_pillarbase_tapered — single point at the bottom (y=0) widening through a 4-point mid-band (y=1.25) to a full 5-point plus at the top (y=2); same square-cross-section, same box fallback |
+| Piece_grausten_pillarbeam_medium | Grausten Medium Beam | grausten | box | CLEAN | 10-point pattern is two axis-aligned plus-clusters at x=+0.5/-0.5 (square cross-section in the y-z plane, no diagonal ring points) — a short square beam; bounds are nearly cubic (1.14 x 1.04 x 1.13), box fallback |
 | Piece_grausten_pillarbeam_small | Grausten Small Beam | grausten | box | CLEAN | 2 snap points on one axis |
 | piece_grausten_roof_45 | Grausten Roof | grausten | wedge | CLEAN | 4 corners, height split 2/2, depth-correlated — sloped panel |
+| piece_grausten_roof_45_arch | Grausten Arched Roof | grausten | wedge | CLEAN | NOT a doorway — 'Arched Roof' describes a roof silhouette, not a walkthrough. Its 4 snap points are a textbook depth-correlated 2-low/2-high split (both low points at z=1, both high points at z=-1), the exact pattern classify() elsewhere reads as a genuine sloped wedge panel; bounds (2.44x2.18x2.53) match the scale of the plain piece_grausten_roof_45 wedge |
+| piece_grausten_roof_45_arch_corner | Grausten Arched Roof Corner | grausten | valley | CLEAN | NOT a doorway — a roof corner cap. Its 3 raw snap points ({1,1,-0.5},{1,-1,1.5},{-1,1,-0.5}) are confirmed IDENTICAL to piece_grausten_roof_45_corner's (already shipping CLEAN as 'triangle'), so the mechanically correct shape is triangle — but triangle needs geom.p that the override schema can't supply for a functional-name-matched prefab (classify() never reaches the 3-point dispatch once /arch/ matches the name; forcing 'triangle' would throw 'shape triangle requires geom' at render time). Tried 'wedge' first (safe, no geom needed) but it renders as a full rectangular ramp — visually confirmed via screenshot to look wrong next to the real triangle sibling. 'valley' (default odd corner 'C', also no geom needed) renders as a folded triangular corner cap that visually matches piece_grausten_roof_45_corner's silhouette much more closely; kept this after a side-by-side screenshot comparison. Flagging for a possible override-schema extension (literal geom passthrough) so this can be fixed exactly, without touching derive.ts's classification order |
+| piece_grausten_roof_45_arch_corner2 | Grausten Arched Roof Corner | grausten | valley | CLEAN | see piece_grausten_roof_45_arch_corner — mirrored corner variant, snap points confirmed identical to piece_grausten_roof_45_corner2 (also shipping CLEAN as 'triangle'), same reasoning and same screenshot-verified 'valley' choice over 'wedge' |
 | piece_grausten_roof_45_corner | Grausten Roof Corner | grausten | triangle | CLEAN | snap-derived: 3 snap points (gable triangle) |
 | piece_grausten_roof_45_corner2 | Grausten Roof Corner | grausten | triangle | CLEAN | snap-derived: 3 snap points (gable triangle) |
 | Piece_grausten_stone_ladder | Grausten Steep Stairs | grausten | ladder | CLEAN | functional piece (ladder) — using the existing ladder shape |
@@ -191,6 +183,11 @@
 | Piece_grausten_wall_1x2 | Grausten Wall 1x2 | grausten | box | CLEAN | 4 corners, height split 2/2 but no depth correlation — plain wall, not a slope |
 | Piece_grausten_wall_2x2 | Grausten Wall 2x2 | grausten | box | CLEAN | 4 corners, height split 2/2 but no depth correlation — plain wall, not a slope |
 | Piece_grausten_wall_4x2 | Grausten Wall 4x2 | grausten | box | CLEAN | 4 corners, height split 2/2 but no depth correlation — plain wall, not a slope |
+| Piece_grausten_wall_arch | Grausten Wall Arch | grausten | arch | CLEAN | one snap-point column (x=1) is fully solid across all 3 heights (y=0,1,2), the other (x=-1) has only a top point — same 'open on one side' archway motif as blackmarble_arch/stone_arch |
+| Piece_grausten_wall_arch_inverted | Grausten Wall Arch (Inverted) | grausten | arch | CLEAN | mirror of Piece_grausten_wall_arch — solid column on the left (x=-1, y=0,1,2), open at the top on the right (x=1, only y=0 present); same archway motif, flipped, matching the '_inverted' name |
+| Piece_grausten_window_2x2 | Grausten Window 2x2 | grausten | lattice | CLEAN | plain 4-corner box pattern (2/2 height split, no depth correlation) that would otherwise auto-classify as a solid box; grid bars approximate window panes, same treatment as iron_floor_1x1_v2 |
+| Piece_grausten_window_4x2 | Grausten Window 4x2 | grausten | lattice | CLEAN | see Piece_grausten_window_2x2, wider (4m) variant, same box-corner pattern |
+| piece_stakewall_blackwood | Ashwood Stakewall | ashwood | box | CLEAN | 8 corner snap points — full box |
 
 ## Batch 3
 

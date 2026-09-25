@@ -9,6 +9,10 @@ export const MATERIAL_FAMILY_COLORS: Record<string, number> = {
   stone: 0x9a9a9a,
   iron: 0x6b6f76,
   thatch: 0xcdbb7a,
+  ashwood: 0xcfc7ac,
+  grausten: 0xa39c8c,
+  flametal: 0x5c2a1f,
+  blackmarble: 0x45454c,
 };
 
 export function colorForFamily(family: string): number {
