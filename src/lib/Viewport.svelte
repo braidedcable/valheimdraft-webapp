@@ -476,13 +476,31 @@
     // Bridge external prop changes (palette selection, undo/redo later)
     // into this imperative Three.js scene. Selecting a palette piece
     // cancels an in-progress move.
+    //
+    // This effect re-fires on every placement, not just on an actual
+    // palette selection change — `selectedPrefab` and `placedPieces` are
+    // sibling $bindable props of the same component instance, and Svelte
+    // re-runs an effect that reads a bindable prop whenever ANY bindable
+    // prop on the instance is written back to the parent, regardless of
+    // whether this prop's own value changed (confirmed directly: logging
+    // inside this effect showed it firing again after a same-piece
+    // placement with `selectedPrefab` unchanged). Resetting
+    // `ghostRotationY` unconditionally therefore reset the ghost's
+    // rotation after every single placement, not just on a genuine new
+    // selection — `lastSelectedPrefab` tracks the previous value across
+    // runs (plain closure variable, not reactive state) so the reset only
+    // fires on a real change.
+    let lastSelectedPrefab: string | null = null;
     $effect(() => {
       selectedPrefab; // register dependency — movingPieceId read via
       // untrack() below so this effect doesn't ALSO re-fire whenever
       // movingPieceId changes elsewhere (e.g. right after pickup, which
       // was clobbering the just-seeded ghost rotation back to 0).
       if (selectedPrefab && untrack(() => movingPieceId)) movingPieceId = null;
-      ghostRotationY = 0;
+      if (selectedPrefab !== lastSelectedPrefab) {
+        ghostRotationY = 0;
+        lastSelectedPrefab = selectedPrefab;
+      }
       rebuildGhost();
       rebuildPlacedPieces();
     });
