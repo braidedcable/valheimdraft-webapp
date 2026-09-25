@@ -2,6 +2,7 @@
   import type { PlacedPiece } from './types';
   import { serialize, deserialize } from './persistence';
   import { encodeSceneToHash } from './shareUrl';
+  import FeedbackDialog from './FeedbackDialog.svelte';
 
   let {
     placedPieces = $bindable(),
@@ -26,6 +27,7 @@
 
   let importError = $state<string | null>(null);
   let fileInput: HTMLInputElement | undefined = $state();
+  let showFeedback = $state(false);
 
   let shareCopied = $state(false);
   let shareError = $state<string | null>(null);
@@ -121,7 +123,10 @@
   <button class="link-button" onclick={() => (showAttribution = !showAttribution)}>
     {showAttribution ? 'Back to planner' : 'Attribution'}
   </button>
+  <button class="link-button" onclick={() => (showFeedback = true)}>Report bug / suggest feature</button>
 </header>
+
+<FeedbackDialog bind:open={showFeedback} pieceCount={placedPieces.length} />
 
 <style>
   header {
