@@ -22,3 +22,15 @@ export const MATERIAL_FAMILY_COLORS: Record<string, number> = {
 export function colorForFamily(family: string): number {
   return MATERIAL_FAMILY_COLORS[family] ?? 0xff00ff; // magenta = "missing mapping", loud on purpose
 }
+
+// Picks black or white, whichever contrasts more against a given fill
+// color, so a piece's outline stays visible regardless of material — a
+// fixed black outline would nearly vanish against the darker families
+// (flametal, blackmarble, dvergr, darkwood).
+export function contrastingOutlineColor(fillColor: number): number {
+  const r = (fillColor >> 16) & 0xff;
+  const g = (fillColor >> 8) & 0xff;
+  const b = fillColor & 0xff;
+  const luminance = (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255;
+  return luminance > 0.5 ? 0x000000 : 0xffffff;
+}

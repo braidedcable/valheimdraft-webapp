@@ -3,7 +3,7 @@
   import * as THREE from 'three';
   import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
   import { geometryForPiece, DOUBLE_SIDED_SHAPES } from './scene/geometry';
-  import { colorForFamily } from './scene/materials';
+  import { colorForFamily, contrastingOutlineColor } from './scene/materials';
   import { getPieceData, snapPositionAlongRay, type PieceEntry } from './scene/snapping';
   import type { PlacedPiece } from './types';
 
@@ -19,6 +19,11 @@
   // closures like any other captured variable, but declared with $state so
   // the template reacts to it too.
   let movingPieceId = $state<string | null>(null);
+  // A functional boundary indicator, not decoration — pieces are flat
+  // material colors with no per-piece shading cue, so two adjacent same-
+  // family pieces can otherwise read as one blob. Defaults on; toggleable
+  // since it's not everyone's preference once the shape is already clear.
+  let showOutlines = $state(true);
 
   const CAMERA_PRESETS: Record<string, THREE.Vector3> = {
     iso: new THREE.Vector3(14, 14, 14),
@@ -69,7 +74,25 @@
         opacity,
         side: DOUBLE_SIDED_SHAPES.has(piece.shape) ? THREE.DoubleSide : THREE.FrontSide,
       });
-      return new THREE.Mesh(geometry, material);
+      const mesh = new THREE.Mesh(geometry, material);
+
+      if (showOutlines) {
+        // EdgesGeometry collapses coplanar triangle edges, leaving just the
+        // piece's real silhouette/crease lines — a wireframe of every
+        // triangle would be noise, not a boundary indicator. Added as a
+        // child so it inherits the mesh's position/rotation for free.
+        const outline = new THREE.LineSegments(
+          new THREE.EdgesGeometry(geometry),
+          new THREE.LineBasicMaterial({
+            color: contrastingOutlineColor(color),
+            transparent: opacity < 1,
+            opacity,
+          })
+        );
+        mesh.add(outline);
+      }
+
+      return mesh;
     }
 
     // A piece's geometry is centered on its own local origin, but its true
@@ -467,6 +490,11 @@
       placedPieces; // register dependency
       rebuildPlacedPieces();
     });
+    $effect(() => {
+      showOutlines; // register dependency
+      rebuildPlacedPieces();
+      rebuildGhost();
+    });
 
     const clock = new THREE.Clock();
     let frameId: number;
@@ -522,6 +550,9 @@
 
 <div class="viewport">
   <div class="camera-presets">
+    <button class:active={showOutlines} onclick={() => (showOutlines = !showOutlines)}>
+      Outlines
+    </button>
     <button onclick={() => setPreset('iso')}>Iso</button>
     <button onclick={() => setPreset('top')}>Top</button>
     <button onclick={() => setPreset('front')}>Front</button>
@@ -561,6 +592,11 @@
     padding: 0.25rem 0.6rem;
     font-size: 0.8rem;
     cursor: pointer;
+  }
+  .camera-presets button.active {
+    background: #3a6ff0;
+    color: white;
+    border-color: #3a6ff0;
   }
   .hint {
     position: absolute;
