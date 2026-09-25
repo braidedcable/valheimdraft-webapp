@@ -180,6 +180,175 @@ Findings that corrected the plan's assumptions, for whoever touches the extracto
 
 ---
 
+## Structural integrity — design (not yet implemented)
+
+Backlog item 2 ("never scoped past 'someday'; no design work started") gets
+its actual design here, prompted by the user asking to plan it and then to
+cross-reference the wiki before finalizing. **Design only — no code written
+yet.** Sequencing and open questions below are what gates starting
+implementation.
+
+### Grounded mechanics (cross-referenced against the wiki, not guessed)
+
+Fandom's `Building_stability` page returned HTTP 402 when fetched and
+couldn't be checked. `valheim.weirdgloop.org/wiki/Building_stability` —
+already on this doc's approved-source list (CC BY-NC-SA 3.0, satisfied by
+the non-commercial ground rule) — worked, and states up front that it's
+sourced from **decompiled `WearNTear.GetMaterialProperties`/
+`WearNTear.UpdateSupport`** — the actual algorithm, not player folklore or a
+secondary guide's paraphrase. (Two secondary guides — game8.co, a
+`valheimhub.wiki` deep-dive — were also checked; neither added verifiable
+numeric detail beyond confirming the general shape of the system, and
+`valheimhub.wiki` explicitly says it doesn't cover the numeric thresholds.)
+
+| Material | MaxSupport | MinSupport | VerticalLoss | HorizontalLoss |
+|---|---|---|---|---|
+| Wood | 100 | 10 | 0.125 | 0.2 |
+| Hardwood (core wood) | 140 | 10 | 0.1 | 0.167 |
+| Stone | 1000 | 100 | 0.125 | 1.0 |
+| Iron | 1500 | 20 | 0.077 | 0.077 |
+| Marble | 1500 | 100 | 0.125 | 0.5 |
+| Ashstone | 2000 | 100 | 0.1 | 0.333 |
+
+- **Ground contact**: a piece touching ground/terrain gets support set to
+  its own material's `MaxSupport`.
+- **Single-parent propagation**:
+  `distance = √[(h1/2+h2/2)² + (w1/2+w2/2)²] + 0.1` (a 0.1m fudge factor),
+  then `support = parent_support × (1 − AngledLoss × distance)`, where
+  `AngledLoss` interpolates between `VerticalLoss` and `HorizontalLoss`
+  based on the connection's angle from vertical.
+- **Multi-parent**: when two parents are ≥100° apart from each other and
+  both sit ≥0.05m below the piece, their contributions average together
+  using only `VerticalLoss` ("mutual support").
+- **Tick timing**: recalculated every 0.5s, ≤50 components per tick, so a
+  large structure's support propagates gradually in the live game — not
+  relevant to a static planner that only needs a converged end-state.
+- **Collapse**: a piece "breaks" at or below its material's `MinSupport`.
+  No source found describing the exact mechanism (instant destruction vs.
+  continuous damage) — see open questions below.
+
+**A non-obvious point this table makes precise, worth designing test cases
+around rather than taking on faith:** stone's `HorizontalLoss` (1.0) is
+*5× worse* per meter than wood's (0.2) — stone isn't "structurally stronger
+per meter of span," it just starts 10× higher (`MaxSupport` 1000 vs. 100),
+which nets out ahead for ordinary building spans. This also explains the
+secondary-guide folklore that stone gives no extra *height* over wood
+(`VerticalLoss` is nearly identical: 0.125 vs. 0.125) — height comes from
+hardwood/iron's better `VerticalLoss`, not from stone.
+
+### Genuine gaps — not filled by any source checked, flagged rather than guessed
+
+- **Color-threshold breakpoints** (blue/green/yellow/orange/red on the
+  in-game hammer-hover display). No numeric source found anywhere.
+- **Cross-material clamping.** Does a piece's incoming support clamp to its
+  *own* material's `MaxSupport`? This is what would explain the observed
+  in-game behavior (from a secondary guide, not the primary source above)
+  that a wood piece touching a stone piece "acts as if placed on the
+  ground" — stone's support value is so far above wood's `MaxSupport` that,
+  if uncapped, the formula would let stone hand wood an impossibly high
+  number. A clamp is the natural fix but isn't stated by any source found.
+- **Whose loss coefficients apply at a material boundary** — the wiki
+  formula doesn't specify whether `AngledLoss` uses the *receiving* piece's
+  material or the *parent's*, when they differ.
+- **`Ancient`/`Ice`/`Timberwood`** exist in this catalog's already-dumped
+  `materialType` enum (`Pieces and properties.md`) but have no entry in
+  weirdgloop's table.
+- **Exact semantics of `noSupportWear`** (already dumped per-piece, e.g.
+  `wood_wall_quarter.json` has `"noSupportWear": true`). Working assumption
+  — a piece with this flag doesn't itself get flagged/break from
+  insufficient support (plausible for attached furniture/decoration) but
+  still transmits support onward normally — needs confirmation, not yet
+  verified against source.
+
+### Resolving the gaps the same way this project already resolved snap points
+
+Phase 0's own finding was "wikis are prose-per-piece, not machine-friendly"
+— snap points and dimensions turned out to need a real runtime extractor,
+not wiki scraping, and `valheimdraft` (the BepInEx plugin) was built for
+exactly that. The same lesson applies here: the cleanest fix for every gap
+above is extending that same plugin to reflect `WearNTear`'s static
+material-properties table (and, if a per-instance override exists, verify
+that too) directly off a live game install — resolves the missing
+materials, the clamp question, and the cross-material-loss question all at
+once, from ground truth rather than another secondary source. This is a
+**Track A** item (needs Jared's Windows machine), the same bucket as the
+original snap-point extractor and the `bpcsaveall` automation.
+
+### How this maps onto the existing codebase
+
+Checked end to end before designing the above, not assumed:
+
+- `valheimdraft/shudnal.BuildPiecesCustomized/*.json` already dumps
+  `materialType`, `supports` (bool), `health`, `noSupportWear`,
+  `noRoofWear` per piece — but `scripts/build-catalog.ts` currently drops
+  all of it, keeping only `cost`. `PieceData`/`pieces.json` has zero
+  material/support fields today.
+- The `MaxSupport`/`MinSupport`/loss-coefficient table is **not per-piece**
+  — it's a static table keyed by `materialType`, so it belongs in a new
+  webapp constants module, not in `pieces.json`.
+- No adjacency graph exists between placed pieces today — `PlacedPiece` is
+  just `{id, prefab, pos, rot}`. The real game finds neighbors via a
+  physics overlap check (colliders within reach), which this project has no
+  equivalent of. The closest existing substitute is the
+  snap-point-coincidence data `worldSnapPoints()`/`snapPosition()`
+  (`snapping.ts`) already compute during placement — two placed pieces
+  would be considered "connected" for support purposes when they share a
+  (near-)coincident snap point. **This is a real, flagged simplification**,
+  not the literal game algorithm: it will miss any support relationship
+  that exists in-game via raw proximity without a snapped connection, and
+  needs to be stated as such wherever it ships, not silently treated as
+  exact.
+- `App.svelte`'s `$derived.by` pattern (already used by `CostTally`, a
+  pure function of `placedPieces`) is the right shape for a support-map
+  recompute — no new reactive architecture needed.
+- `Viewport.svelte` already has a per-piece material-tint override path
+  (used today for the selection-highlight red tint), reusable for stability
+  coloring instead of building a new render path.
+
+### Proposed phases (not started)
+
+1. **Track A**: extend `valheimdraft`'s dumper to reflect
+   `WearNTear`'s material-properties table live, resolving the gaps above
+   from ground truth. Blocks nothing else from starting, but the constants
+   used in phase 3 stay explicitly "wiki-sourced, pending verification"
+   until this lands.
+2. Carry `materialType`, `structural` (rename of the dumped `supports`
+   bool — avoids colliding with "support" as a noun elsewhere in this
+   design), and `noSupportWear` through `build-catalog.ts` into
+   `PieceData`. `health`/`noRoofWear` explicitly **not** carried through —
+   separate wear axis (rain/monster decay), out of scope for structural
+   support.
+3. New `src/lib/structural/` module: the material-properties table (cited
+   to weirdgloop above, flagged pending phase-1 verification) plus a pure
+   `computeSupport(placedPieces, pieces) → Map<id, {support, broken}>`,
+   built on snap-coincidence adjacency + ground-contact detection (a
+   piece's lowest bound point ≈ y=0), solved by bounded iterative
+   relaxation — handles the mutual-support case's circularity without
+   needing the real game's 0.5s/50-per-tick gradual propagation, which
+   only matters for a live, ticking world, not a static planner computing
+   one converged result.
+4. **Tests first**, `snapping.test.ts`-style (`support.test.ts`): a ground
+   piece reads its material's `MaxSupport`; a wood pole stack degrades
+   toward `MinSupport` with height; a wood piece touching stone behaves as
+   a foundation (per the clamping question above — this test is also how
+   that question gets pinned down empirically rather than guessed); a
+   mutual-support case with two ≥100°-apart parents below the piece.
+5. Viewport visualization: a toolbar-toggled "stability view" recoloring
+   placed pieces by support ratio, reusing the existing tint-override path.
+   Color bands are cosmetic-only given no threshold source exists — ship
+   with an explicit, adjustable approximation, not a claimed game-accurate
+   mapping.
+
+### Scope line (stated up front, not discovered mid-implementation)
+
+A static readout of the *current* layout's stability — warns what would
+collapse given real game formulas — and never animates, damages, or
+deletes a piece. Consistent with this being a planning tool, not a physics
+simulation. Real-time decay ticks, monster/weapon damage, and roof/rain
+wear are explicitly out of scope.
+
+---
+
 ## MVP status: COMPLETE (again)
 
 Was declared complete, reopened to add vertical placement/snapping as a
@@ -276,7 +445,7 @@ See "Backlog" below for what's separately deferred (not part of MVP) and why.
 ## Backlog (post-MVP, low priority — revisit later, not now)
 
 1. **`.blueprint` export/import** — moved out of MVP scope (decision 5). Real effort (~a day, not near-free) with one open technical question: whether exported rotations need a Unity-left-handed ↔ Three.js-right-handed conversion. Full writeup, including a best-guess-without-testing reasoning chain (positions probably fine, rotations probably need conversion — moderate-to-high confidence something's needed, low confidence on the exact fix), is in "Blueprint interop" above. **Before implementing:** round-trip a real `.blueprint` fixture (e.g. `TestBox_V2.blueprint` from github.com/AugusDogus/Buildheim) through this app's data model and check whether it renders right-side-up or mirrored/misrotated — don't guess the conversion, test it. Import is a further step past export — needs prefab-name mapping and more error handling.
-2. **Structural integrity simulation** (Valheim's beam-support rules) — never scoped past "someday"; no design work started.
+2. **Structural integrity simulation** (Valheim's beam-support rules) — design done, see "Structural integrity — design (not yet implemented)" above (wiki-sourced material constants, phased plan, open questions flagged); implementation not started. Phase 1 (verifying the material-properties table against a live game install) is a Track A item.
 3. **CC0 tiling textures** in place of flat material colors — purely cosmetic, optional, no urgency. Candidate sources already identified if picked up: ambientCG, Poly Haven, Kenney.nl, OpenGameArt (see "Art strategy" above).
 4. **Mesh instancing** — only matters if framerate becomes a real problem at higher piece counts; not needed at current wood-tier scale.
 5. **Known minor gap, not urgent:** Toolbar's Undo/Redo *buttons* (as opposed to the Ctrl+Z/Ctrl+Shift+Z keyboard shortcuts) don't cancel an in-progress piece move first. Confirmed low-severity by direct testing — no crash, no data corruption, recoverable via the existing right-click-cancel. See the undo/redo entry under Track B below for full detail.
