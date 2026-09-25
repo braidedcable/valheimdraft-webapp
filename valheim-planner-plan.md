@@ -795,7 +795,7 @@ component.
 
 ---
 
-## Catalog expansion — batch 1 shipped (post-MVP)
+## Catalog expansion — all three batches shipped (post-MVP)
 
 MVP shipped 18 hand-picked wood pieces with no generator — `pieces.json` was
 written by hand from `pieces-dump.json` + `bpcsaveall` data in one commit.
@@ -806,10 +806,14 @@ batches instead of continuing to hand-author entries one at a time.
 **Batches** (grouped by material family, not by how hard each one turned out
 to be): 1 = wood gaps + core wood + wood-iron + darkwood + stone + iron. 2 =
 ashwood + grausten + flametal + black marble. 3 = timberwood + scalewood +
-dvergr + misc. Only batch 1 is shipped (`maxBatch: 1` in
-`scripts/catalog-overrides.json`); batches 2–3 exist in the classification
-report but aren't in `src/data/pieces.json` yet, pending the same
-per-batch visual sign-off this batch got.
+dvergr + misc. **All three batches are shipped** — 204 of 207 classified
+pieces (the 3 excluded are wall-hanging adornments, see "New shapes" below).
+Batch 1 was built directly; batches 2 and 3 were built by two parallel
+subagents, each in an isolated git worktree, working only in
+`catalog-overrides.json` for their own families and validating independently
+via `CATALOG_FAMILIES=<families> npm run catalog` (see "Parallel batches 2
+and 3" below for how that was set up and what came out of it). `maxBatch: 3`
+in `scripts/catalog-overrides.json` ships all of them.
 
 ### The pipeline
 
@@ -952,12 +956,99 @@ no interactive browser. Every batch-1 family was reviewed this way,
 including targeted close-ups (front-on for the arch/door shapes
 specifically) before the two bugs above were found and fixed.
 
-**Not done, deliberately:** batches 2 and 3 (`catalog-report.md` shows their
-classification already — some REVIEW/SUSPICIOUS items to resolve,
-e.g. `piece_stakewall_blackwood`'s off-center pivot, `blackmarble_column_1/2`'s
-18-snap-point pattern, `stave_wall_2x2`'s 6-point pattern not matching the
-`ridge` shape) and the "Roof Cross" shape's X-vs-bowtie question (built as
-an X per the generator's guess; wasn't specifically re-verified against a
-real in-game screenshot). Raise `maxBatch` in `catalog-overrides.json` and
-re-run `npm run catalog` to ship the next batch once it's been reviewed the
-same way this one was.
+**Not shipped in batch 1, resolved when batches 2/3 shipped** (see below):
+`piece_stakewall_blackwood`'s off-center pivot, `blackmarble_column_1/2`'s
+18-snap-point pattern, `stave_wall_2x2`'s 6-point pattern, and the various
+"arch"-named pieces that turned out to be roofs, windows, or doors rather
+than doorways.
+
+**Still open:** the "Roof Cross" shape's X-vs-bowtie question (built as an
+X per the generator's guess; wasn't specifically re-verified against a real
+in-game screenshot).
+
+### Parallel batches 2 and 3
+
+Batches 2 and 3 were built by two subagents working simultaneously, each in
+its own isolated git worktree (`Agent` tool, `isolation: "worktree"`), so
+their edits couldn't collide on the same working copy. Each was scoped to
+*only* edit `scripts/catalog-overrides.json`'s `pieces` map for its own
+families and explicitly told not to touch `derive.ts`/`geometry.ts`/
+`build-catalog.ts` — if a piece needed something the existing shapes/override
+mechanisms couldn't express, the instruction was to flag it and move on
+rather than invent a fix mid-batch. This kept both agents' real work
+(interpreting each piece's actual data, choosing the right shape, visually
+verifying it) fully independent, with only a thin, mechanical integration
+step left afterward.
+
+**Two generic capabilities were added to the generator *before* spawning the
+agents**, specifically so neither agent needed to touch shared code:
+- **`CATALOG_FAMILIES=family,family npm run catalog`** overrides the
+  normally-cumulative `batch <= maxBatch` shipped filter with an explicit
+  family list. Batches are cumulative by design (`maxBatch: 3` ships batches
+  1-3 together), which would otherwise make it impossible to validate batch
+  3 in isolation while batch 2 was simultaneously mid-fix in a different
+  worktree — every batch-3 test run would fail on batch 2's still-broken
+  pieces too. This sidesteps that entirely: each agent validated with a real
+  `npm run catalog` run, a real `pieces.json`, and real rendering, scoped to
+  only its own families, regardless of the other batch's state.
+- **`{"accept": true, "note": "..."}`** in a piece's override entry keeps
+  whatever shape `classify()` already guessed (which is often already
+  correct) but forces the verdict to CLEAN when only a heuristic sanity
+  check — bounds-vs-snap-box mismatch, off-center pivot, oversized — false
+  flagged it. Used for e.g. `ashwood_wall_roof_26`/`_upsidedown` (a real
+  gable triangle whose shallow 26 degree eave overhang just missed the
+  bounds-sanity tolerance) and both drawbridge pieces (genuinely oversized,
+  not bad data).
+
+**A real generator-schema gap the batch-2 agent found and correctly worked
+around, then fixed properly afterward:** `piece_grausten_roof_45_arch` and
+`_arch_corner`/`_corner2` are roof panels/corners, not doorways, despite
+"Arch" in their in-game names ("Grausten Arched Roof(...)") — a case where
+the functional-name heuristic's veto is a false positive, confirmed by
+comparing their raw snap points directly against `piece_grausten_roof_45`/
+`_corner`/`_corner2` (plain roof pieces one prefab-name away, already
+shipping CLEAN with the mechanically-correct shape). The corner variants'
+own snap points are *identical* to their non-arch siblings — the correct
+shape is `triangle` with real snap-derived `geom`. But the override
+mechanism only ever computes `geom` for `lattice`/`door` overrides, so
+forcing `shape: "triangle"` on a functional-name-matched piece would throw
+`"requires geom"` at render time — a real schema gap, not a piece-specific
+problem. The agent, correctly scoped away from touching `derive.ts`, worked
+around it with `shape: "valley"` (no `geom` needed, defaults to the same
+odd-corner guess the two original pinned wood corner pieces use) — visually
+reasonable but not the mechanically exact shape, and using a *default*
+rather than *derived* odd corner. Fixed properly during integration by
+giving `classify()` an optional `bypassFunctionalName` flag (and a matching
+`"bypassFunctionalName": true` override field) that skips just the
+door/gate/arch name veto and lets the piece fall through to the ordinary
+snap-pattern dispatch — both corner pieces now render with the exact same
+derived `geom` as their siblings, confirmed identical
+(`piece_grausten_roof_45_arch_corner`'s `geom.p` matches
+`piece_grausten_roof_45_corner`'s, same 3 points).
+
+**Integration:** both worktree branches were merged into `main` (batch 2
+fast-forwarded cleanly; batch 3 needed a real merge, conflicting only in the
+two *generated* report files and in adjacent, non-overlapping additions to
+`catalog-overrides.json`'s `pieces` map — resolved by hand, then
+`npm run catalog` regenerated both report files fresh). Both agents also
+independently found the same real gap outside their assigned scope:
+`src/lib/scene/materials.ts` had no color entries for *any* batch 2/3
+family, which — because the generator hard-fails on a shipped piece whose
+family has no registered color — would have blocked either batch from
+building at all. The batch-2 agent added its four families' colors
+directly (flagged clearly as a scope exception, necessary to validate
+anything); the batch-3 agent added its own temporarily, verified with them,
+then reverted before committing and flagged the gap instead. All eight
+colors (`ashwood`, `grausten`, `flametal`, `blackmarble`, `timberwood`,
+`scalewood`, `dvergr`, `misc`) were reconciled into one commit during
+integration.
+
+Verified the same way batch 1 was: `npm run catalog` (`maxBatch: 3`, zero
+FAIL lines, 204 of 207 classified pieces shipped), `npm run check`,
+`npm run test` (57 tests — both agents correctly left the test files alone,
+per instructions), `npm run build`, and `VERIFY_GALLERY=1 npm run verify`
+across all 14 families with no console errors, plus targeted close-up
+screenshots (front-view) confirming every new `arch`/`door`/`lattice` piece
+across both batches — including the three new doors/gates
+(`piece_hexagonal_door`, `stave_gate`, `ashwood_door`) and the grausten
+archways — reads correctly rather than as a plain box.

@@ -40,6 +40,7 @@ interface Overrides {
       center?: Vec3;
       note?: string;
       accept?: boolean;
+      bypassFunctionalName?: boolean;
     }
   >;
 }
@@ -206,7 +207,9 @@ for (const dumpPiece of dump) {
     center = box.center;
   }
 
-  const auto = classify(prefab, bounds, center, snapPoints);
+  const auto = classify(prefab, bounds, center, snapPoints, {
+    bypassFunctionalName: pieceOverride?.bypassFunctionalName === true,
+  });
   let verdict: Verdict = auto.verdict;
   let shape: PieceShape | null = auto.shape;
   let geom: ShapeParams | undefined = auto.geom;

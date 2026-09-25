@@ -7,10 +7,7 @@
 | 0 | EXCLUDE | 3 |
 | 1 | CLEAN | 86 |
 | 2 | CLEAN | 73 |
-| 3 | CLEAN | 40 |
-| 3 | NEEDS_NEW_SHAPE | 1 |
-| 3 | SUSPICIOUS | 3 |
-| 3 | REVIEW | 1 |
+| 3 | CLEAN | 45 |
 
 ## Batch 0 (shipped)
 
@@ -111,7 +108,7 @@
 | woodiron_pole | Wood Iron Pole | woodiron | box | CLEAN | 2 snap points on one axis |
 | woodwall | Wood Wall | wood | box | CLEAN | 4 corners, height split 2/2 but no depth correlation — plain wall, not a slope |
 
-## Batch 2
+## Batch 2 (shipped)
 
 | Prefab | Label | Family | Shape | Verdict | Reason |
 |---|---|---|---|---|---|
@@ -174,8 +171,8 @@
 | Piece_grausten_pillarbeam_small | Grausten Small Beam | grausten | box | CLEAN | 2 snap points on one axis |
 | piece_grausten_roof_45 | Grausten Roof | grausten | wedge | CLEAN | 4 corners, height split 2/2, depth-correlated — sloped panel |
 | piece_grausten_roof_45_arch | Grausten Arched Roof | grausten | wedge | CLEAN | NOT a doorway — 'Arched Roof' describes a roof silhouette, not a walkthrough. Its 4 snap points are a textbook depth-correlated 2-low/2-high split (both low points at z=1, both high points at z=-1), the exact pattern classify() elsewhere reads as a genuine sloped wedge panel; bounds (2.44x2.18x2.53) match the scale of the plain piece_grausten_roof_45 wedge |
-| piece_grausten_roof_45_arch_corner | Grausten Arched Roof Corner | grausten | valley | CLEAN | NOT a doorway — a roof corner cap. Its 3 raw snap points ({1,1,-0.5},{1,-1,1.5},{-1,1,-0.5}) are confirmed IDENTICAL to piece_grausten_roof_45_corner's (already shipping CLEAN as 'triangle'), so the mechanically correct shape is triangle — but triangle needs geom.p that the override schema can't supply for a functional-name-matched prefab (classify() never reaches the 3-point dispatch once /arch/ matches the name; forcing 'triangle' would throw 'shape triangle requires geom' at render time). Tried 'wedge' first (safe, no geom needed) but it renders as a full rectangular ramp — visually confirmed via screenshot to look wrong next to the real triangle sibling. 'valley' (default odd corner 'C', also no geom needed) renders as a folded triangular corner cap that visually matches piece_grausten_roof_45_corner's silhouette much more closely; kept this after a side-by-side screenshot comparison. Flagging for a possible override-schema extension (literal geom passthrough) so this can be fixed exactly, without touching derive.ts's classification order |
-| piece_grausten_roof_45_arch_corner2 | Grausten Arched Roof Corner | grausten | valley | CLEAN | see piece_grausten_roof_45_arch_corner — mirrored corner variant, snap points confirmed identical to piece_grausten_roof_45_corner2 (also shipping CLEAN as 'triangle'), same reasoning and same screenshot-verified 'valley' choice over 'wedge' |
+| piece_grausten_roof_45_arch_corner | Grausten Arched Roof Corner | grausten | triangle | CLEAN | snap-derived: 3 snap points (gable triangle) |
+| piece_grausten_roof_45_arch_corner2 | Grausten Arched Roof Corner | grausten | triangle | CLEAN | snap-derived: 3 snap points (gable triangle) |
 | piece_grausten_roof_45_corner | Grausten Roof Corner | grausten | triangle | CLEAN | snap-derived: 3 snap points (gable triangle) |
 | piece_grausten_roof_45_corner2 | Grausten Roof Corner | grausten | triangle | CLEAN | snap-derived: 3 snap points (gable triangle) |
 | Piece_grausten_stone_ladder | Grausten Steep Stairs | grausten | ladder | CLEAN | functional piece (ladder) — using the existing ladder shape |
@@ -189,21 +186,19 @@
 | Piece_grausten_window_4x2 | Grausten Window 4x2 | grausten | lattice | CLEAN | see Piece_grausten_window_2x2, wider (4m) variant, same box-corner pattern |
 | piece_stakewall_blackwood | Ashwood Stakewall | ashwood | box | CLEAN | 8 corner snap points — full box |
 
-## Batch 3
+## Batch 3 (shipped)
 
 | Prefab | Label | Family | Shape | Verdict | Reason |
 |---|---|---|---|---|---|
-| piece_hexagonal_door | Hexagonal Gate | dvergr | — | NEEDS_NEW_SHAPE | functional piece (name matches door|gate|grate|window|shutter|hatch|arch) — must not render as a plain box |
-| piece_drawbridge | Timberwood Drawbridge | misc | — | SUSPICIOUS | oversized: a bounds axis exceeds 6m |
-| piece_drawbridge_log | Rustic Drawbridge | misc | — | SUSPICIOUS | oversized: a bounds axis exceeds 6m |
-| stave_gate | Timberwood Gate | timberwood | — | SUSPICIOUS | oversized: a bounds axis exceeds 6m |
-| stave_wall_2x2 | Timber Wall | timberwood | — | REVIEW | 6 snap points, unrecognized pattern |
 | crystal_wall_1x1 | Crystal Wall 1x1 | misc | box | CLEAN | 4 corners, height split 2/2 but no depth correlation — plain wall, not a slope |
 | hearth | Hearth | misc | box | CLEAN | 8 corner snap points — full box |
+| piece_drawbridge | Timberwood Drawbridge | misc | box | CLEAN | Timberwood Drawbridge; genuinely large (6.5x11.7x4.6, tower+deck mechanism), not a data bug. Its 6 snap points are 3 distinct Y levels x 2 Z positions at a fixed X (a hinge/mount rig), which doesn't match any recognized flat-shape pattern (not a box corner set, not a ridge). A drawbridge is a complex hinged mechanism with no dedicated shape; box is a crude but reasonable first-pass footprint, same 'ship an approximation, flag for later' approach as other functional pieces without a bespoke shape. |
+| piece_drawbridge_log | Rustic Drawbridge | misc | box | CLEAN | Rustic Drawbridge; see piece_drawbridge — same 3-Y-level/2-Z hinge-rig snap pattern (scaled down, 4.3x6.9x2.7), same box-approximation reasoning. |
 | piece_dvergr_metal_wall_2x2 | Dvergr Metal Wall | dvergr | box | CLEAN | 4 corners, height split 2/2 but no depth correlation — plain wall, not a slope |
 | piece_dvergr_spiralstair | Dvergr Spiral Staircase Left | dvergr | stairs | CLEAN | functional piece (stair) — using the existing stairs shape |
 | piece_dvergr_spiralstair_right | Dvergr Spiral Staircase Right | dvergr | stairs | CLEAN | functional piece (stair) — using the existing stairs shape |
 | piece_dvergr_stake_wall | Dvergr Stakewall | dvergr | box | CLEAN | 4 corners, height split 2/2 but no depth correlation — plain wall, not a slope |
+| piece_hexagonal_door | Hexagonal Gate | dvergr | door | CLEAN | Hexagonal Gate; only 2 snap points (top/bottom centerline) so classify() can't tell it's a gate from pattern alone — matches the functional-name rule. Real hexagonal frame isn't modeled (no hexagon shape exists), plain rectangular door frame is an approximation. Width (3.94m) is close to double darkwood_gate's, so leaves:2 like darkwood_gate/stave_gate rather than a single wide leaf. |
 | piece_icecube | Ice Block | misc | box | CLEAN | 8 corner snap points — full box |
 | scale_halfwall_1x2 | Scalewood Half Wall | scalewood | box | CLEAN | 4 corners, height split 2/2 but no depth correlation — plain wall, not a slope |
 | scale_quarterwall_1x1 | Scalewood Quarter Wall | scalewood | box | CLEAN | 4 corners, height split 2/2 but no depth correlation — plain wall, not a slope |
@@ -232,8 +227,10 @@
 | stave_deco_beam_67 | Decorated Timber Beam 67° | timberwood | beam | CLEAN | snap-derived: 2 diagonal snap points |
 | stave_deco_pole_2m | Decorated Timber Pole 2m | timberwood | box | CLEAN | 2 snap points on one axis |
 | stave_deco_wall_2x2 | Lathed Timber Wall | timberwood | box | CLEAN | 4 corners, height split 2/2 but no depth correlation — plain wall, not a slope |
+| stave_gate | Timberwood Gate | timberwood | door | CLEAN | Timberwood Gate; 5 snap points at x=(1,0)/(-1,0)/(1,6)/(-1,6)/(1,3) are the exact same topology as darkwood_gate's (1,0)/(-1,0)/(1,4)/(-1,4)/(1,2) — a gate frame, just taller (6.44m, over the 6m oversized cutoff, which is real: this is a tall stave-church-style gate). Treated like darkwood_gate: shape door, leaves 2, sized from its own bounds. |
 | stave_pole_2m | Timber Pole 2m | timberwood | cylinder | CLEAN | 2 vertical snap points, round cross-section |
 | stave_pole_4m | Timber Pole 4m | timberwood | cylinder | CLEAN | 2 vertical snap points, round cross-section |
+| stave_wall_2x2 | Timber Wall | timberwood | box | CLEAN | Timber Wall; 6 snap points are x=(1,0,-1) at y=1 and x=(1,0,-1) at y=-1 — i.e. the standard 4-corner wall pattern (x=+-1, y=+-1, z=0 for all, no depth correlation) PLUS an extra mid-span point at x=0 on each row (likely a sub-snap target for narrower pieces to dock at the wall's middle). All 6 points share z=0, so this is unambiguously a plain flat wall, not a roof/ridge piece — classify()'s 6-point branch only recognizes the eave(4)/ridge(2) roof pattern, so this 3/3 wall split falls through to REVIEW. Forced to box, consistent with every other 4-corner flat wall in the catalog. |
 | stave_wall_cross_26 | Timber Roof Cross 26° | timberwood | cross | CLEAN | snap-derived: 5 snap points (4 corners + center) — X truss |
 | stave_wall_cross_45 | Timber Roof Cross 45° | timberwood | cross | CLEAN | snap-derived: 5 snap points (4 corners + center) — X truss |
 | stave_wall_cross_67 | Timber Roof Cross 67° | timberwood | cross | CLEAN | snap-derived: 5 snap points (4 corners + center) — X truss |

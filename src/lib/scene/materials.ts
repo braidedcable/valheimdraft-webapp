@@ -13,6 +13,10 @@ export const MATERIAL_FAMILY_COLORS: Record<string, number> = {
   grausten: 0xa39c8c,
   flametal: 0x5c2a1f,
   blackmarble: 0x45454c,
+  timberwood: 0xc9963f,
+  scalewood: 0x6f8a6b,
+  dvergr: 0x5b5a6e,
+  misc: 0x8f8878,
 };
 
 export function colorForFamily(family: string): number {

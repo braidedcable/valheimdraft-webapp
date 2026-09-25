@@ -65,8 +65,26 @@ function cornerLetter(x: number, z: number): 'A' | 'B' | 'C' | 'D' {
  * Pure function of the piece's own data (plus its prefab name, used only for
  * the functional-piece and round-cross-section checks below) — no override
  * knowledge here. The generator applies per-piece overrides on top of this.
+ *
+ * `opts.bypassFunctionalName` skips the door/gate/arch/etc. name veto (rule
+ * 5) and falls through to the ordinary snap-pattern dispatch instead. For
+ * pieces whose functional-sounding name is misleading — e.g. a "Grausten
+ * Arched Roof" is a roof panel, not a walk-through archway — where the
+ * piece's own snap points already describe a real, ordinary shape (a
+ * triangle/wedge/hip/valley with a correctly *derived* geom) and forcing
+ * that exact shape via a plain override isn't possible (the override
+ * mechanism doesn't recompute geom for those shape kinds — see
+ * scripts/catalog-overrides.json's `bypassFunctionalName` field). Only
+ * meant for cases confirmed by comparing the piece's raw snap points
+ * against a real sibling that already classifies correctly.
  */
-export function classify(prefab: string, bounds: Vec3, center: Vec3, snapPoints: SnapPoint[]): Classification {
+export function classify(
+  prefab: string,
+  bounds: Vec3,
+  center: Vec3,
+  snapPoints: SnapPoint[],
+  opts?: { bypassFunctionalName?: boolean }
+): Classification {
   if (snapPoints.length === 0) {
     return { verdict: 'REVIEW', shape: null, reason: 'no snap points' };
   }
@@ -103,7 +121,7 @@ export function classify(prefab: string, bounds: Vec3, center: Vec3, snapPoints:
   if (LADDER_NAME.test(prefab)) {
     return { verdict: 'CLEAN', shape: 'ladder', reason: 'functional piece (ladder) — using the existing ladder shape' };
   }
-  if (FUNCTIONAL_NAME.test(prefab)) {
+  if (FUNCTIONAL_NAME.test(prefab) && !opts?.bypassFunctionalName) {
     return {
       verdict: 'NEEDS_NEW_SHAPE',
       shape: null,
