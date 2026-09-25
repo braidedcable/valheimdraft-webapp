@@ -5,66 +5,46 @@
 // instant vitest runs; a browser check is only needed to confirm this is
 // wired into the live scene correctly, not to re-verify the math itself.
 
-export interface Vec3Like {
-  x: number;
-  y: number;
-  z: number;
-}
-
 // How much of the build's depth (camera-near side) gets sliced away is
 // driven by zoom, not a fixed 50/50 split: zoomed out shows the whole build
 // solid (or nearly so) so orbiting to check the exterior doesn't constantly
 // cut half of it away; dollying in progressively peels back more of the
-// near side, so "zooming into" a spot reveals deeper inside it. Expressed
-// as a ratio of camera-to-target distance over the build's own size (see
-// boundingRadius below) rather than an absolute world distance, so a tiny
-// shed and a great hall both start slicing at a comparable relative zoom
-// instead of one needing far more scroll than the other.
-const ZOOM_RATIO_NO_SLICE = 1.2; // at/beyond this ratio: no slicing at all
-const ZOOM_RATIO_MAX_SLICE = 0.3; // at/below this ratio: slicing maxes out
+// near side, so "zooming into" a spot reveals deeper inside it.
+//
+// This used to be normalized against the whole build's own size (camera
+// distance / bounding-radius), on the theory that a tiny shed and a great
+// hall should both start slicing at a comparable relative zoom. That was
+// wrong: Valheim pieces are a fixed real-world size regardless of how big
+// the build is (a wall is ~2m whether it's part of a shed or a castle), so
+// "how close do I need to get before it's worth seeing past the nearest
+// wall" is a roughly CONSTANT absolute distance, not one that scales with
+// the whole structure. The relative version required the camera to be
+// within ~1.2x the build's own radius of the target — for any normally
+// sized build at the default Iso preset (camera ~24 units out), that's
+// essentially never true, so x-ray visibly did nothing under ordinary use
+// (confirmed: toggling it at the default view produced zero opacity change
+// for structures up to ~20 units in radius). Using plain world-unit
+// thresholds against the NEAREST piece's actual depth instead fixes that,
+// and needs no notion of "the whole build's size" at all.
+const DEPTH_NO_SLICE = 10; // camera-to-nearest-piece depth at/beyond which: no slicing
+const DEPTH_MAX_SLICE = 2.5; // at/below this depth: slicing maxes out
 // Never quite 1 — always leave a sliver of the true back solid, so there's
 // still something to land the cursor/eye on at max zoom rather than every
 // single piece fading out together.
 const MAX_SLICE_FRACTION = 0.85;
-
-// Radius floor for a one-piece (or otherwise near-zero-extent) build, so a
-// tiny/degenerate structure doesn't produce a near-zero radius and blow up
-// the zoom ratio below.
-const MIN_STRUCTURE_RADIUS = 0.5;
 
 function clamp(value: number, lo: number, hi: number): number {
   return Math.min(hi, Math.max(lo, value));
 }
 
 /**
- * Half the diagonal of the axis-aligned bounding box around `points` — an
- * angle-independent measure of "how big is this build" (unlike the
- * camera-projected depth range, which shrinks toward zero if you happen to
- * be looking edge-on along a flat build), so the zoom mapping doesn't jump
- * around purely from orbiting.
+ * What fraction (0..MAX_SLICE_FRACTION) of the build's depth range to fade,
+ * given how close the camera currently is to the nearest placed piece
+ * (`nearestDepth`, i.e. depthMin from the camera-relative projection in
+ * Viewport.svelte).
  */
-export function boundingRadius(points: Vec3Like[]): number {
-  if (points.length === 0) return MIN_STRUCTURE_RADIUS;
-
-  let minX = Infinity, minY = Infinity, minZ = Infinity;
-  let maxX = -Infinity, maxY = -Infinity, maxZ = -Infinity;
-  for (const p of points) {
-    if (p.x < minX) minX = p.x;
-    if (p.y < minY) minY = p.y;
-    if (p.z < minZ) minZ = p.z;
-    if (p.x > maxX) maxX = p.x;
-    if (p.y > maxY) maxY = p.y;
-    if (p.z > maxZ) maxZ = p.z;
-  }
-  const dx = maxX - minX, dy = maxY - minY, dz = maxZ - minZ;
-  const diagonal = Math.sqrt(dx * dx + dy * dy + dz * dz);
-  return Math.max(diagonal / 2, MIN_STRUCTURE_RADIUS);
-}
-
-/** What fraction (0..MAX_SLICE_FRACTION) of the build's depth range to fade, given the current zoom. */
-export function zoomSliceFraction(camDist: number, structureRadius: number): number {
-  const ratio = camDist / Math.max(structureRadius, MIN_STRUCTURE_RADIUS);
-  const t = clamp((ZOOM_RATIO_NO_SLICE - ratio) / (ZOOM_RATIO_NO_SLICE - ZOOM_RATIO_MAX_SLICE), 0, 1);
+export function zoomSliceFraction(nearestDepth: number): number {
+  const t = clamp((DEPTH_NO_SLICE - nearestDepth) / (DEPTH_NO_SLICE - DEPTH_MAX_SLICE), 0, 1);
   return t * MAX_SLICE_FRACTION;
 }
 

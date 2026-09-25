@@ -5,7 +5,7 @@
   import { geometryForPiece, DOUBLE_SIDED_SHAPES } from './scene/geometry';
   import { colorForFamily, contrastingOutlineColor } from './scene/materials';
   import { getPieceData, snapPositionAlongRay, type PieceEntry } from './scene/snapping';
-  import { boundingRadius, xraySliceCutoff, zoomSliceFraction } from './scene/xray';
+  import { xraySliceCutoff, zoomSliceFraction } from './scene/xray';
   import type { PlacedPiece } from './types';
 
   let { selectedPrefab = $bindable(null), placedPieces = $bindable([]), onUndo, onRedo }: {
@@ -328,10 +328,10 @@
 
       // How much of the depth range actually gets sliced is zoom-dependent
       // — see scene/xray.ts's module comment for why and its tests for the
-      // tuning itself; this file only wires the live camera/scene state
-      // (positions, camera-to-target distance) into that pure math.
-      const structureRadius = boundingRadius(meshes.map((mesh) => mesh.position));
-      const sliceFraction = zoomSliceFraction(camPos.distanceTo(controls.target), structureRadius);
+      // tuning itself; this file only wires depthMin (how close the camera
+      // currently is to the nearest placed piece, already computed above)
+      // into that pure math.
+      const sliceFraction = zoomSliceFraction(depthMin);
       const cutoff = xraySliceCutoff(depthMin, depthMax, sliceFraction);
 
       for (const mesh of meshes) {
