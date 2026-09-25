@@ -97,14 +97,12 @@
     // instance, every time — fine at a handful of pieces, a real stutter
     // once dozens/hundreds accumulate. Cached per prefab and reused across
     // every instance instead; disposed on unmount below.
-    type PieceAssets = { geometry: THREE.BufferGeometry; edges: THREE.BufferGeometry; boundingSphere: THREE.Sphere };
-    const pieceAssetCache = new Map<string, PieceAssets>();
-    function getPieceAssets(piece: PieceEntry): PieceAssets {
+    const pieceAssetCache = new Map<string, { geometry: THREE.BufferGeometry; edges: THREE.BufferGeometry }>();
+    function getPieceAssets(piece: PieceEntry): { geometry: THREE.BufferGeometry; edges: THREE.BufferGeometry } {
       let assets = pieceAssetCache.get(piece.prefab);
       if (!assets) {
         const geometry = geometryForPiece(piece);
-        geometry.computeBoundingSphere();
-        assets = { geometry, edges: new THREE.EdgesGeometry(geometry), boundingSphere: geometry.boundingSphere!.clone() };
+        assets = { geometry, edges: new THREE.EdgesGeometry(geometry) };
         pieceAssetCache.set(piece.prefab, assets);
       }
       return assets;
@@ -274,37 +272,28 @@
     }
 
     // --- X-ray (see-through) ---
-    // Fill fades to near-nothing; outline stays much more visible, so the
-    // occluding piece's silhouette still reads while its face doesn't block
-    // the view. Pure constants, not derived from anything.
+    // Fill fades to near-nothing; outline stays much more visible, so a
+    // faded piece's silhouette still reads while its face doesn't block the
+    // view. Pure constants, not derived from anything.
     const XRAY_FILL_OPACITY = 0.08;
     const XRAY_OUTLINE_OPACITY = 0.35;
 
-    // Every placed piece's world bounding sphere, refreshed once per
-    // updateXray() call (not per comparison) — cheap enough at this cadence
-    // and avoids recomputing matrixWorld-dependent transforms n^2 times.
-    function collectXraySpheres(): { mesh: THREE.Mesh; center: THREE.Vector3; radius: number; dist: number }[] {
-      const camPos = camera.position;
-      const entries: { mesh: THREE.Mesh; center: THREE.Vector3; radius: number; dist: number }[] = [];
-      for (const mesh of meshByPlacedId.values()) {
-        const piece = mesh.userData.piece as PieceEntry | undefined;
-        if (!piece) continue;
-        const { boundingSphere } = getPieceAssets(piece);
-        const center = boundingSphere.center.clone().applyMatrix4(mesh.matrixWorld);
-        entries.push({ mesh, center, radius: boundingSphere.radius, dist: camPos.distanceTo(center) });
-      }
-      entries.sort((a, b) => a.dist - b.dist);
-      return entries;
-    }
-
-    // For every piece, tests whether it lies on the line-of-sight between
-    // the camera and some OTHER, farther-away piece — pure sphere-vs-ray
-    // math (no triangle raycasting), so this stays cheap even run every
-    // ~150ms (see the xray throttle in animate() below) across the whole
-    // placed set: O(n^2) comparisons but each one is a handful of vector
-    // ops, not a scene raycast. A piece found to be in the way of ANY
-    // farther piece gets faded — that's what reveals the "back most" pieces
-    // from whatever angle the camera is currently at.
+    // A spatial cutaway, not a per-piece occlusion test: project every
+    // placed piece's position onto the camera's current view direction,
+    // split that range at its midpoint, and fade everything nearer than the
+    // midpoint while leaving everything farther fully opaque — literally
+    // slicing the build in half between camera and back, independent of
+    // what any individual piece is. This also means "front/back" reslices
+    // itself to "floor/roof" for free when looking straight down (or any
+    // other axis) — it's whatever the camera currently happens to be
+    // looking along, not a fixed world axis.
+    //
+    // Piece-type classification (walls vs. beams vs. furniture) was tried
+    // and dropped: name-matching had false positives (e.g. "Log Beam"
+    // prefabs contain "wall") and a from-scratch geometry classifier was
+    // more complexity than the payoff justified. A plain depth slice needs
+    // none of that and gives a more predictable "front half becomes see-
+    // through" result the user can reason about while orbiting.
     function updateXray() {
       if (!showXray) {
         for (const mesh of meshByPlacedId.values()) {
@@ -315,41 +304,34 @@
         return;
       }
 
+      const meshes = [...meshByPlacedId.values()];
+      if (meshes.length === 0) return;
+
       const camPos = camera.position;
-      ensureFreshMatrices();
-      const entries = collectXraySpheres();
-      const occluding = new Set<THREE.Mesh>();
+      const viewDir = new THREE.Vector3();
+      camera.getWorldDirection(viewDir); // normalized, camera -> into the scene
 
-      for (let i = 0; i < entries.length; i++) {
-        const near = entries[i];
-        for (let j = i + 1; j < entries.length; j++) {
-          const far = entries[j];
-          const toFar = far.center.clone().sub(camPos);
-          const farDist = toFar.length();
-          if (farDist < 1e-6) continue;
-          const dir = toFar.divideScalar(farDist);
-          const t = near.center.clone().sub(camPos).dot(dir);
-          if (t <= 0 || t >= farDist - far.radius) continue; // not between camera and far's surface
-          const closest = camPos.clone().addScaledVector(dir, t);
-          if (closest.distanceTo(near.center) < near.radius) {
-            occluding.add(near.mesh);
-            break; // near already known to occlude something — no need to check further
-          }
-        }
+      // mesh.position is already the piece's true mesh-bounds center in
+      // world space (positionMesh offsets it by piece.center on placement),
+      // and placedGroup itself carries no transform of its own — so this
+      // needs no matrixWorld lookup, unlike raycasting elsewhere in this file.
+      let depthMin = Infinity;
+      let depthMax = -Infinity;
+      const depthByMesh = new Map<THREE.Mesh, number>();
+      for (const mesh of meshes) {
+        const depth = mesh.position.clone().sub(camPos).dot(viewDir);
+        depthByMesh.set(mesh, depth);
+        if (depth < depthMin) depthMin = depth;
+        if (depth > depthMax) depthMax = depth;
       }
+      const midpoint = (depthMin + depthMax) / 2;
 
-      for (const entry of entries) {
-        const isOccluding = occluding.has(entry.mesh);
-        const desiredOpacity = isOccluding ? XRAY_FILL_OPACITY : 1;
-        if (entry.mesh.userData.opacity === desiredOpacity) continue;
-        const piece = entry.mesh.userData.piece as PieceEntry;
-        applyMeshAppearance(
-          entry.mesh,
-          piece,
-          entry.mesh.userData.color,
-          desiredOpacity,
-          isOccluding ? XRAY_OUTLINE_OPACITY : 1
-        );
+      for (const mesh of meshes) {
+        const isFrontHalf = depthByMesh.get(mesh)! < midpoint;
+        const desiredOpacity = isFrontHalf ? XRAY_FILL_OPACITY : 1;
+        if (mesh.userData.opacity === desiredOpacity) continue;
+        const piece = mesh.userData.piece as PieceEntry;
+        applyMeshAppearance(mesh, piece, mesh.userData.color, desiredOpacity, isFrontHalf ? XRAY_OUTLINE_OPACITY : 1);
       }
     }
 
