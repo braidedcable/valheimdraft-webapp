@@ -167,11 +167,22 @@
     // used to find where the ghost should rest. Combining the two (rather
     // than ground alone) lets the ghost land on top of a placed piece, not
     // just on the ground plane, which is what makes stacking possible.
-    function raycastGroundAndPlaced(): THREE.Vector3 | null {
+    //
+    // Also reports which placed piece (if any) is the nearest hit — i.e.
+    // whichever piece is actually visible "under the cursor" from the
+    // camera's current perspective, the same depth-sorted hits[0] every
+    // other pointer interaction in this file already relies on (see
+    // raycastPlaced() below). snapPositionAlongRay() uses this to prefer
+    // connecting to that piece over a scene-wide ray-distance search, which
+    // otherwise can't tell an occluded piece from the one actually under
+    // the cursor (see snapping.ts for the full writeup).
+    function raycastGroundAndPlaced(): { point: THREE.Vector3; hitPlacedId: string | null } | null {
       ensureFreshMatrices();
       raycaster.setFromCamera(pointerNdc, camera);
       const hits = raycaster.intersectObjects([ground, ...placedGroup.children], false);
-      return hits.length > 0 ? hits[0].point.clone() : null;
+      if (hits.length === 0) return null;
+      const hitPlacedId = (hits[0].object.userData.placedId as string | undefined) ?? null;
+      return { point: hits[0].point.clone(), hitPlacedId };
     }
 
     function raycastPlaced(): THREE.Object3D | null {
@@ -203,8 +214,8 @@
       // real snap point the cursor is actually aiming near). A pure-yaw
       // rotation leaves Y unchanged, so center.y is still a valid vertical
       // offset post-rotation.
-      const tentativePos = surfaceHit.clone();
-      tentativePos.y = surfaceHit.y + piece.bounds.y / 2 - piece.center.y;
+      const tentativePos = surfaceHit.point.clone();
+      tentativePos.y = surfaceHit.point.y + piece.bounds.y / 2 - piece.center.y;
 
       // Exclude the piece currently being moved from its own snap targets
       // — otherwise it'd snap to its own pre-move position.
@@ -212,7 +223,14 @@
       // raycaster.ray reflects the setFromCamera() call inside
       // raycastGroundAndPlaced() above — still valid here since nothing
       // between there and here re-runs setFromCamera with different args.
-      const snapped = snapPositionAlongRay(prefab, tentativePos, rot, snapTargets, raycaster.ray);
+      const snapped = snapPositionAlongRay(
+        prefab,
+        tentativePos,
+        rot,
+        snapTargets,
+        raycaster.ray,
+        surfaceHit.hitPlacedId
+      );
 
       pendingPos = snapped;
       pendingRot = rot;

@@ -210,12 +210,57 @@ const NEAR_VERTICAL_TIE_EPSILON = 0.05;
 // connection, regardless of how it scores on ray or center distance.
 const DEGENERATE_OVERLAP_EPSILON = 0.05;
 
+/**
+ * `hoveredPieceId`: the placed piece (if any) actually struck by the
+ * ordinary mesh raycast that produced `tentativePos` — i.e. whichever piece
+ * is visually "under the cursor" from the viewer's current perspective,
+ * exactly as depth-sorted by the raycaster (nearer geometry occludes
+ * farther geometry, same as anything else rendered in the scene).
+ *
+ * rayDist (below) is a depth-blind metric: it measures how close the AIMING
+ * RAY's infinite line passes a candidate point, with no regard for whether
+ * something else sits between the camera and that point. For vertically
+ * stacked construction in particular — a new piece being added above/below
+ * a piece that's already sitting on top of another piece — every candidate
+ * shares the same (x, z) column, so a moderately angled (non-top-down)
+ * camera ray can pass numerically closer to a LOWER, occluded candidate
+ * than to the piece the cursor is actually pointing at, purely as an
+ * artifact of where the ray's true closest-approach point to that vertical
+ * line happens to fall. Confirmed by direct construction: a ray aimed at a
+ * second-story point can measure a smaller distanceToPoint() for a
+ * ground-story point directly below it than for the intended target itself.
+ *
+ * Fix: when the raycast actually hit a specific placed piece, search that
+ * piece's own snap points FIRST and commit to a result there if one
+ * qualifies — before ever consulting rayDist against every other placed
+ * piece in the scene. This matches how every other pointer interaction in
+ * this app already works (raycastPlaced() for pickup/delete uses hits[0],
+ * the nearest occluding surface, not a scene-wide search) and restores
+ * "snap to what's under the cursor" as the actual rule. The full
+ * scene-wide rayDist search remains as the fallback for exactly the cases
+ * it was built for: the raycast missing a thin target's mesh and landing
+ * on the ground or on nothing relevant instead (see the thin-target and
+ * far-end-reach regressions below) — those cases have no meaningful "hit
+ * piece" to prefer in the first place.
+ *
+ * That restriction alone isn't quite enough, though: even within a SINGLE
+ * hovered piece, rayDist can still pick the wrong one of its snap points
+ * (e.g. a pole's bottom instead of its top) — the ray's closest-approach
+ * point along its full infinite line has no idea tentativePos already
+ * pinpointed exactly where, on that piece's own surface, the cursor is
+ * really resting. So the restricted (hovered-piece) pass ranks by
+ * `pointDist` — proximity to the real hit location — instead, via
+ * `findSnapCandidate`'s `preferPointDist` flag. The scene-wide fallback
+ * pass keeps ranking by rayDist, since tentativePos there is exactly what
+ * can't be trusted (that's the whole reason it's falling back).
+ */
 export function snapPositionAlongRay(
   prefab: string,
   tentativePos: THREE.Vector3,
   rot: THREE.Quaternion,
   placedPieces: PlacedPiece[],
-  ray: THREE.Ray
+  ray: THREE.Ray,
+  hoveredPieceId?: string | null
 ): THREE.Vector3 {
   const piece = getPieceData(prefab);
   if (!piece || piece.snapPoints.length === 0 || placedPieces.length === 0) return tentativePos;
@@ -227,12 +272,75 @@ export function snapPositionAlongRay(
     ray.direction.x * ray.direction.x + ray.direction.z * ray.direction.z <
     RAY_NEAR_VERTICAL_THRESHOLD * RAY_NEAR_VERTICAL_THRESHOLD;
 
+  if (hoveredPieceId) {
+    const hovered = placedPieces.filter((p) => p.id === hoveredPieceId);
+    if (hovered.length > 0) {
+      const restricted = findSnapCandidate(
+        prefab,
+        rot,
+        ghostLocalOffsets,
+        rotatedCenter,
+        tentativePos,
+        rayIsNearVertical,
+        hovered,
+        placedPieces,
+        ray,
+        true
+      );
+      if (restricted) return restricted;
+    }
+  }
+
+  return (
+    findSnapCandidate(
+      prefab,
+      rot,
+      ghostLocalOffsets,
+      rotatedCenter,
+      tentativePos,
+      rayIsNearVertical,
+      placedPieces,
+      placedPieces,
+      ray,
+      false
+    ) ?? tentativePos
+  );
+}
+
+/**
+ * `candidatePieces`: which placed pieces' snap points are searched as
+ * connection targets — the hovered piece alone on the first (restricted)
+ * pass, or the whole scene on the fallback pass.
+ *
+ * `overlapCheckPieces`: always the FULL scene, independent of
+ * `candidatePieces`. The degenerate-overlap exclusion below has to see
+ * every placed piece regardless of which ones are being searched as
+ * targets, because a candidate can be "wrong" (it erases some OTHER placed
+ * piece) even when the target point it was derived from belongs to the one
+ * piece being searched — e.g. two flush-stacked poles share a junction
+ * point (the lower pole's top coincides exactly with the upper pole's
+ * bottom); searching the upper pole alone can still surface a candidate
+ * that overlaps the lower pole via that shared point, and only a
+ * scene-wide overlap check catches it.
+ */
+function findSnapCandidate(
+  prefab: string,
+  rot: THREE.Quaternion,
+  ghostLocalOffsets: THREE.Vector3[],
+  rotatedCenter: THREE.Vector3,
+  tentativePos: THREE.Vector3,
+  rayIsNearVertical: boolean,
+  candidatePieces: PlacedPiece[],
+  overlapCheckPieces: PlacedPiece[],
+  ray: THREE.Ray,
+  preferPointDist: boolean
+): THREE.Vector3 | null {
   let bestPos: THREE.Vector3 | null = null;
-  let bestRayDist = Infinity;
+  let bestPrimaryDist = Infinity;
   let bestCenterDist = Infinity;
   let bestCenterY = -Infinity;
 
-  for (const placed of placedPieces) {
+  for (const placed of candidatePieces) {
     const ownerPiece = getPieceData(placed.prefab);
     if (!ownerPiece) continue;
 
@@ -277,7 +385,7 @@ export function snapPositionAlongRay(
         // case this exists for (two candidates of the SAME piece pairing
         // with the same target from opposite sides land on the same root).
         if (
-          placedPieces.some(
+          overlapCheckPieces.some(
             (p) =>
               p.prefab === prefab &&
               candidatePos.distanceTo(toVector3(p.pos)) < DEGENERATE_OVERLAP_EPSILON &&
@@ -290,27 +398,38 @@ export function snapPositionAlongRay(
         const candidateCenter = candidatePos.clone().add(rotatedCenter);
         const centerDist = ray.distanceToPoint(candidateCenter);
 
-        // PRIMARY: rayDist — which real target point the user is actually
-        // pointing at. Two candidates sharing the same target point share
-        // the exact same (bit-identical) rayDist value, since it's computed
-        // once per target point above and reused here; that exact equality
-        // is the genuine tie this falls through on. A near-vertical ray can
-        // also produce a near-tie between two DIFFERENT target points at
-        // the same (x, z) (top vs. bottom of a placed piece) — camera-math
-        // noise, not a real signal — so that case is folded into the same
-        // tie check via NEAR_VERTICAL_TIE_EPSILON.
-        const rayDistTied =
+        // PRIMARY: which real target point the user is actually pointing
+        // at. Ordinarily that's rayDist — how closely the aiming ray's own
+        // line passes the target. But rayDist is depth-blind: it doesn't
+        // know where the raycast actually landed, only where the ray's
+        // infinite line happens to pass closest, which can favor a target
+        // point behind or in front of the real one (see snapPositionAlongRay's
+        // doc comment). When `preferPointDist` is set — the caller already
+        // knows tentativePos came from a real mesh hit on THIS specific
+        // piece, i.e. it's a trustworthy 3D location, not a fallback — use
+        // proximity to that actual hit point (pointDist) instead, which
+        // correctly favors whichever end of the piece the cursor is really
+        // over. Two candidates sharing the same target point still share
+        // the exact same (bit-identical) primaryDist value in either mode,
+        // since it's computed once per (target, offset) pair; that exact
+        // equality is the genuine tie this falls through on. A near-vertical
+        // ray can also produce a near-tie between two DIFFERENT target
+        // points at the same (x, z) (top vs. bottom of a placed piece) —
+        // camera-math noise, not a real signal — so that case is folded
+        // into the same tie check via NEAR_VERTICAL_TIE_EPSILON.
+        const primaryDist = preferPointDist ? pointDist : rayDist;
+        const primaryDistTied =
           !bestPos ||
-          rayDist === bestRayDist ||
-          (rayIsNearVertical && Math.abs(rayDist - bestRayDist) <= NEAR_VERTICAL_TIE_EPSILON);
+          primaryDist === bestPrimaryDist ||
+          (rayIsNearVertical && Math.abs(primaryDist - bestPrimaryDist) <= NEAR_VERTICAL_TIE_EPSILON);
 
         let better: boolean;
         if (!bestPos) {
           better = true;
-        } else if (!rayDistTied) {
-          better = rayDist < bestRayDist;
+        } else if (!primaryDistTied) {
+          better = primaryDist < bestPrimaryDist;
         } else {
-          // SECONDARY (only among rayDist-tied candidates): centerDist —
+          // SECONDARY (only among primaryDist-tied candidates): centerDist —
           // which of the ghost's own snap points should mate with this
           // shared target point.
           const centerDistTied =
@@ -328,7 +447,7 @@ export function snapPositionAlongRay(
 
         if (better) {
           bestPos = candidatePos;
-          bestRayDist = rayDist;
+          bestPrimaryDist = primaryDist;
           bestCenterDist = centerDist;
           bestCenterY = candidateCenter.y;
         }
@@ -336,5 +455,5 @@ export function snapPositionAlongRay(
     }
   }
 
-  return bestPos ?? tentativePos;
+  return bestPos;
 }

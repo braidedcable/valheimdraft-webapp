@@ -89,6 +89,53 @@ describe('snapPositionAlongRay — vertical stacking (pole)', () => {
   });
 });
 
+describe('snapPositionAlongRay — prefer the piece actually under the cursor (regression: picked an occluded lower piece)', () => {
+  // poleA sits on the ground; poleB is already stacked on top of poleA
+  // (both on the same (x, z) column, as any multi-story build naturally
+  // is). The user is now aiming at poleB's top, from a realistic angled
+  // (non-top-down) camera, to stack a third pole there.
+  const poleA = place('wood_pole', new THREE.Vector3(0, groundRestY('wood_pole'), 0));
+  const poleB = place('wood_pole', new THREE.Vector3(0, poleA.pos.y + 1.0, 0));
+  const topA = poleA.pos.y + 0.5;
+  const topB = poleB.pos.y + 0.5;
+
+  // A moderately angled camera ray aimed near poleB's top surface (offset
+  // slightly off-center, as a real cursor rarely lands exactly on a snap
+  // point) — chosen so that the ray's line passes almost exactly through
+  // poleA's top point purely as a camera-geometry artifact, even though
+  // poleA is nowhere near the cursor and is occluded by poleB from this
+  // viewpoint. Confirmed by direct construction: distanceToPoint() to
+  // poleA's top here is ~0, smaller than to poleB's top, which is exactly
+  // the depth-blind failure mode this test guards against.
+  const cameraPos = new THREE.Vector3(1, 6, 1);
+  const aimPoint = new THREE.Vector3(0.2, topB, 0.2);
+  const ray = new THREE.Ray(cameraPos, aimPoint.clone().sub(cameraPos).normalize());
+  // The actual mesh raycast hit poleB's top surface — this is what makes
+  // poleB "the piece under the cursor."
+  const tentative = new THREE.Vector3(0.2, topB, 0.2);
+
+  it('snaps onto the hovered piece (poleB) when its id is provided, not the occluded piece below it', () => {
+    const result = snapPositionAlongRay('wood_pole', tentative, IDENTITY, [poleA, poleB], ray, poleB.id);
+    expect(result.y - poleB.pos.y).toBeCloseTo(1.0, 6);
+    expect(result.x).toBeCloseTo(0, 6);
+    expect(result.z).toBeCloseTo(0, 6);
+  });
+
+  it('demonstrates the bug: without a hovered-piece hint, pure ray distance anchors to the occluded lower pole instead of poleB', () => {
+    const result = snapPositionAlongRay('wood_pole', tentative, IDENTITY, [poleA, poleB], ray);
+    // Without the hover restriction, the depth-blind rayDist search still
+    // locks onto poleA (whose top the ray passes almost exactly through, a
+    // pure camera-geometry artifact) rather than poleB, the piece actually
+    // under the cursor — it just lands on poleA's *bottom* connection
+    // (stacking a fourth pole below ground) once the degenerate-overlap
+    // exclusion (now scene-wide) rules out the exact-overlap pairings at
+    // poleA's top. Either way, it is not the poleB-top connection the user
+    // is pointing at — which is exactly why the hover restriction above is
+    // needed rather than relying on rayDist filtering alone.
+    expect(result.y - poleA.pos.y).toBeCloseTo(-1.0, 6);
+  });
+});
+
 describe('snapPositionAlongRay — vertical stacking (wall), thin-target ray fallback', () => {
   const wallA = place('wood_wall_log', new THREE.Vector3(0, groundRestY('wood_wall_log'), 0));
 
