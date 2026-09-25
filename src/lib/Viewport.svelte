@@ -42,11 +42,28 @@
 
     const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
     renderer.setSize(canvas.clientWidth, canvas.clientHeight);
-    renderer.setPixelRatio(window.devicePixelRatio);
+    // Capped at 2x — an uncapped devicePixelRatio (3x on many phones/some
+    // laptops) roughly doubles or triples the number of fragments the GPU
+    // has to shade every frame for no visible benefit past ~2x, and that
+    // cost scales with scene complexity (more placed pieces = more
+    // overdraw), compounding exactly where frame time is already tight.
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
 
     const controls = new OrbitControls(camera, renderer.domElement);
     controls.target.set(0, 0, 0);
     controls.enableDamping = true;
+    // Hover-preview raycasting (see handlePointerMove) is pointless while
+    // the user is mid-drag orbiting the camera — nothing is being placed,
+    // so skip it entirely for the duration of the drag rather than paying
+    // for a scene-wide raycast on every one of the dozens of pointermove
+    // events an orbit drag fires.
+    let isOrbiting = false;
+    controls.addEventListener('start', () => {
+      isOrbiting = true;
+    });
+    controls.addEventListener('end', () => {
+      isOrbiting = false;
+    });
 
     setPreset = (name) => {
       camera.position.copy(CAMERA_PRESETS[name]);
@@ -66,33 +83,78 @@
     ground.rotation.x = -Math.PI / 2;
     scene.add(ground);
 
+    // Building a piece's geometry (and, worse, its EdgesGeometry — an edge
+    // scan over every triangle) is one of the costlier things this file
+    // does, and a piece's geometry is fully determined by its prefab, never
+    // by where/how many times it's placed. Previously every rebuild
+    // recomputed it (and a fresh material) from scratch for every placed
+    // instance, every time — fine at a handful of pieces, a real stutter
+    // once dozens/hundreds accumulate. Cached per prefab and reused across
+    // every instance instead; disposed on unmount below.
+    const pieceAssetCache = new Map<string, { geometry: THREE.BufferGeometry; edges: THREE.BufferGeometry }>();
+    function getPieceAssets(piece: PieceEntry): { geometry: THREE.BufferGeometry; edges: THREE.BufferGeometry } {
+      let assets = pieceAssetCache.get(piece.prefab);
+      if (!assets) {
+        const geometry = geometryForPiece(piece);
+        assets = { geometry, edges: new THREE.EdgesGeometry(geometry) };
+        pieceAssetCache.set(piece.prefab, assets);
+      }
+      return assets;
+    }
+
+    // Materials are cheap individually but were being reallocated on every
+    // rebuild too (one MeshStandardMaterial + one LineBasicMaterial per
+    // placed piece, every time ANY piece changed) — pooled by their visual
+    // key instead so e.g. every non-hovered oak piece shares one material.
+    const fillMaterialCache = new Map<string, THREE.MeshStandardMaterial>();
+    function getFillMaterial(color: number, opacity: number, doubleSided: boolean): THREE.MeshStandardMaterial {
+      const key = `${color}:${opacity}:${doubleSided}`;
+      let material = fillMaterialCache.get(key);
+      if (!material) {
+        material = new THREE.MeshStandardMaterial({
+          color,
+          transparent: opacity < 1,
+          opacity,
+          side: doubleSided ? THREE.DoubleSide : THREE.FrontSide,
+        });
+        fillMaterialCache.set(key, material);
+      }
+      return material;
+    }
+    const outlineMaterialCache = new Map<string, THREE.LineBasicMaterial>();
+    function getOutlineMaterial(color: number, opacity: number): THREE.LineBasicMaterial {
+      const key = `${color}:${opacity}`;
+      let material = outlineMaterialCache.get(key);
+      if (!material) {
+        material = new THREE.LineBasicMaterial({ color, transparent: opacity < 1, opacity });
+        outlineMaterialCache.set(key, material);
+      }
+      return material;
+    }
+
     function buildMesh(piece: PieceEntry, color: number, opacity = 1): THREE.Mesh {
-      const geometry = geometryForPiece(piece);
-      const material = new THREE.MeshStandardMaterial({
-        color,
-        transparent: opacity < 1,
-        opacity,
-        side: DOUBLE_SIDED_SHAPES.has(piece.shape) ? THREE.DoubleSide : THREE.FrontSide,
-      });
+      const { geometry, edges } = getPieceAssets(piece);
+      const material = getFillMaterial(color, opacity, DOUBLE_SIDED_SHAPES.has(piece.shape));
       const mesh = new THREE.Mesh(geometry, material);
 
-      if (showOutlines) {
-        // EdgesGeometry collapses coplanar triangle edges, leaving just the
-        // piece's real silhouette/crease lines — a wireframe of every
-        // triangle would be noise, not a boundary indicator. Added as a
-        // child so it inherits the mesh's position/rotation for free.
-        const outline = new THREE.LineSegments(
-          new THREE.EdgesGeometry(geometry),
-          new THREE.LineBasicMaterial({
-            color: contrastingOutlineColor(color),
-            transparent: opacity < 1,
-            opacity,
-          })
-        );
-        mesh.add(outline);
-      }
+      // EdgesGeometry collapses coplanar triangle edges, leaving just the
+      // piece's real silhouette/crease lines — a wireframe of every
+      // triangle would be noise, not a boundary indicator. Added as a
+      // child so it inherits the mesh's position/rotation for free. Always
+      // built (geometry is cached/shared, so this is nearly free) and just
+      // toggled via `visible` so flipping showOutlines never has to touch
+      // geometry — see the showOutlines $effect below.
+      const outline = new THREE.LineSegments(edges, getOutlineMaterial(contrastingOutlineColor(color), opacity));
+      outline.visible = showOutlines;
+      mesh.add(outline);
 
       return mesh;
+    }
+
+    function setMeshAppearance(mesh: THREE.Mesh, piece: PieceEntry, color: number, opacity = 1) {
+      mesh.material = getFillMaterial(color, opacity, DOUBLE_SIDED_SHAPES.has(piece.shape));
+      const outline = mesh.children[0] as THREE.LineSegments | undefined;
+      if (outline) outline.material = getOutlineMaterial(contrastingOutlineColor(color), opacity);
     }
 
     // A piece's geometry is centered on its own local origin, but its true
@@ -122,20 +184,69 @@
     scene.add(placedGroup);
     let hoveredPlacedId: string | null = null;
 
-    function rebuildPlacedPieces() {
-      placedGroup.clear();
+    function colorForPlaced(id: string, family: string): number {
+      return id === hoveredPlacedId ? 0xff5555 : colorForFamily(family);
+    }
+
+    // Diffs placedPieces against the live meshes instead of the old
+    // clear-and-rebuild-everything: add/update/remove only what actually
+    // changed. This is what rebuildPlacedPieces() used to do on every
+    // placement, move, undo/redo, AND every hover change — the last one
+    // fires continuously while the mouse moves over the scene (including
+    // mid camera-orbit-drag), so a full rebuild there meant reallocating
+    // every placed piece's geometry/material on essentially every frame
+    // once a moderate number of pieces existed. Geometry/material are
+    // cached per prefab/color (see buildMesh above), so add/update here is
+    // cheap even when it does run for every piece.
+    const meshByPlacedId = new Map<string, THREE.Mesh>();
+
+    function syncPlacedPieces() {
+      const seen = new Set<string>();
       for (const placed of placedPieces) {
         if (placed.id === movingPieceId) continue; // shown as the ghost instead
         const piece = getPieceData(placed.prefab);
         if (!piece) continue;
-        const color = placed.id === hoveredPlacedId ? 0xff5555 : colorForFamily(piece.family);
-        const mesh = buildMesh(piece, color);
+        seen.add(placed.id);
+
+        const color = colorForPlaced(placed.id, piece.family);
+        let mesh = meshByPlacedId.get(placed.id);
+        if (!mesh) {
+          mesh = buildMesh(piece, color);
+          mesh.userData.placedId = placed.id;
+          mesh.userData.color = color;
+          meshByPlacedId.set(placed.id, mesh);
+          placedGroup.add(mesh);
+        } else if (mesh.userData.color !== color) {
+          setMeshAppearance(mesh, piece, color);
+          mesh.userData.color = color;
+        }
+
         const pos = new THREE.Vector3(placed.pos.x, placed.pos.y, placed.pos.z);
         const rot = new THREE.Quaternion(placed.rot.x, placed.rot.y, placed.rot.z, placed.rot.w);
         positionMesh(mesh, piece, pos, rot);
-        mesh.userData.placedId = placed.id;
-        placedGroup.add(mesh);
       }
+
+      for (const [id, mesh] of meshByPlacedId) {
+        if (seen.has(id)) continue;
+        placedGroup.remove(mesh);
+        meshByPlacedId.delete(id);
+      }
+    }
+
+    // Fast path for a hover change alone (the common case while idly
+    // moving the mouse over the scene): touches only the one or two meshes
+    // whose color actually changed, instead of running the full sync pass.
+    function applyHover(id: string | null) {
+      if (!id) return;
+      const mesh = meshByPlacedId.get(id);
+      const placed = placedPieces.find((p) => p.id === id);
+      if (!mesh || !placed) return;
+      const piece = getPieceData(placed.prefab);
+      if (!piece) return;
+      const color = colorForPlaced(id, piece.family);
+      if (mesh.userData.color === color) return;
+      setMeshAppearance(mesh, piece, color);
+      mesh.userData.color = color;
     }
 
     // --- Ghost preview ---
@@ -169,19 +280,18 @@
       pointerNdc.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
     }
 
-    // rebuildPlacedPieces() creates fresh Mesh instances and adds them to
-    // placedGroup, but a newly-added Object3D's matrixWorld isn't
-    // recomputed until the next render pass (normally done inside
-    // renderer.render() during the animate() loop). Raycasting reads
-    // matrixWorld directly, so a raycast that happens synchronously right
-    // after a rebuild — e.g. a pointerup fired immediately after a
-    // rebuild-triggering state change, with no animation frame in
-    // between — can silently miss a piece that's actually right there.
-    // Confirmed by direct reproduction: deselecting (which rebuilds
-    // placedGroup) immediately followed by a pickup click on the very
-    // piece just rendered failed to register a hit until this was added.
-    // Forcing it here is cheap at wood-tier piece counts and correct
-    // regardless of render-loop timing.
+    // syncPlacedPieces() creates fresh Mesh instances for newly-added
+    // pieces and adds them to placedGroup, but a newly-added Object3D's
+    // matrixWorld isn't recomputed until the next render pass (normally
+    // done inside renderer.render() during the animate() loop). Raycasting
+    // reads matrixWorld directly, so a raycast that happens synchronously
+    // right after a sync — e.g. a pointerup fired immediately after a
+    // sync-triggering state change, with no animation frame in between —
+    // can silently miss a piece that's actually right there. Confirmed by
+    // direct reproduction: deselecting (which syncs placedGroup)
+    // immediately followed by a pickup click on the very piece just
+    // rendered failed to register a hit until this was added. Forcing it
+    // here is cheap and correct regardless of render-loop timing.
     function ensureFreshMatrices() {
       placedGroup.updateMatrixWorld(true);
     }
@@ -267,11 +377,18 @@
 
       if (!prefab) {
         // Idle: hovering a placed piece previews it as "click to pick up".
+        // Skipped entirely mid camera-orbit-drag — nothing can be picked up
+        // while the camera itself is being dragged, so there's no reason to
+        // pay for a scene-wide raycast on every one of the many pointermove
+        // events an orbit drag fires.
+        if (isOrbiting) return;
         const hit = raycastPlaced();
         const id = (hit?.userData.placedId as string | undefined) ?? null;
         if (id !== hoveredPlacedId) {
+          const previous = hoveredPlacedId;
           hoveredPlacedId = id;
-          rebuildPlacedPieces();
+          applyHover(previous);
+          applyHover(id);
         }
         return;
       }
@@ -309,7 +426,7 @@
       if (selectedPrefab) selectedPrefab = null;
       if (movingPieceId) {
         movingPieceId = null;
-        rebuildPlacedPieces(); // the piece being moved reappears
+        syncPlacedPieces(); // the piece being moved reappears
       }
     }
 
@@ -375,7 +492,7 @@
           hoveredPlacedId = null;
           movingPieceId = id;
           rebuildGhost();
-          rebuildPlacedPieces();
+          syncPlacedPieces();
 
           // rebuildGhost() creates the mesh but leaves it at the origin
           // until the next pointermove repositions it — without this, the
@@ -408,7 +525,7 @@
     function cancelMoveForHistoryNav() {
       if (movingPieceId) {
         movingPieceId = null;
-        rebuildPlacedPieces(); // the piece being moved reappears
+        syncPlacedPieces(); // the piece being moved reappears
       }
     }
 
@@ -502,16 +619,26 @@
         lastSelectedPrefab = selectedPrefab;
       }
       rebuildGhost();
-      rebuildPlacedPieces();
+      syncPlacedPieces();
     });
     $effect(() => {
       placedPieces; // register dependency
-      rebuildPlacedPieces();
+      syncPlacedPieces();
     });
     $effect(() => {
-      showOutlines; // register dependency
-      rebuildPlacedPieces();
-      rebuildGhost();
+      // Toggling outlines doesn't need to touch geometry or materials at
+      // all — every mesh already carries its (shared) outline as its first
+      // child (see buildMesh), so this just flips visibility on what's
+      // already there instead of rebuilding the whole scene.
+      showOutlines;
+      for (const mesh of meshByPlacedId.values()) {
+        const outline = mesh.children[0] as THREE.LineSegments | undefined;
+        if (outline) outline.visible = showOutlines;
+      }
+      if (ghostMesh) {
+        const outline = ghostMesh.children[0] as THREE.LineSegments | undefined;
+        if (outline) outline.visible = showOutlines;
+      }
     });
 
     const clock = new THREE.Clock();
@@ -561,6 +688,15 @@
       canvas.removeEventListener('pointerup', handlePointerUp);
       canvas.removeEventListener('contextmenu', handleContextMenu);
       canvas.removeEventListener('wheel', handleWheel, { capture: true });
+      // The geometry/material caches above are shared across every mesh
+      // for the lifetime of this scene, so nothing disposes them as
+      // individual pieces come and go — only here, once, on teardown.
+      for (const assets of pieceAssetCache.values()) {
+        assets.geometry.dispose();
+        assets.edges.dispose();
+      }
+      for (const material of fillMaterialCache.values()) material.dispose();
+      for (const material of outlineMaterialCache.values()) material.dispose();
       renderer.dispose();
     };
   });
