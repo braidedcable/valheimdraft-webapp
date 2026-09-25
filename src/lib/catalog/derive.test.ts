@@ -201,6 +201,37 @@ describe('catalog integrity — every generated piece', () => {
       }
     }
   });
+
+  // Viewport.svelte's positionMesh() assumes every geometryForPiece() output
+  // is built centered on its own local (0,0,0) — it positions a mesh by
+  // `pos + rotate(piece.center)` alone, with no additional recentering, so
+  // an off-center geometry renders shifted in world space by however far
+  // off it is. wood_stair shipped with its geometry spanning y in
+  // [0, height] instead of [-height/2, height/2] — a silent 100%-of-height
+  // offset that put the top step visibly above where an adjoining floor
+  // piece actually sits (see the fix in geometry.ts). This can't catch a
+  // *correct-looking-but-wrong* offset (there's no ground truth here beyond
+  // "is it centered"), but it does catch the "shifted by a large fraction
+  // of the piece's own size" class of bug this repo has already shipped
+  // once. Real pieces legitimately run up to ~15% off-center (asymmetric
+  // ridge caps, angled beams) — the threshold sits well above that and
+  // well below a shift on the order of the stairs bug (~50%).
+  it("every piece's geometry is centered on its own local origin", () => {
+    const OFF_CENTER_RATIO_LIMIT = 0.3;
+    for (const piece of pieces) {
+      const geometry = geometryForPiece(piece);
+      geometry.computeBoundingBox();
+      const { min, max } = geometry.boundingBox!;
+      const center = { x: (min.x + max.x) / 2, y: (min.y + max.y) / 2, z: (min.z + max.z) / 2 };
+      const size = { x: max.x - min.x, y: max.y - min.y, z: max.z - min.z };
+      const maxDim = Math.max(size.x, size.y, size.z, 0.01);
+      const offRatio = Math.max(Math.abs(center.x), Math.abs(center.y), Math.abs(center.z)) / maxDim;
+      expect(
+        offRatio,
+        `${piece.prefab} (${piece.shape}): geometry center (${center.x.toFixed(3)}, ${center.y.toFixed(3)}, ${center.z.toFixed(3)}) is ${(offRatio * 100).toFixed(0)}% of its bounding size off local origin`
+      ).toBeLessThan(OFF_CENTER_RATIO_LIMIT);
+    }
+  });
 });
 
 // Freezes the 18 original wood-tier MVP pieces' render-critical fields
