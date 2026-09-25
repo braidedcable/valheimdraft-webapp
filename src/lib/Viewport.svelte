@@ -5,7 +5,7 @@
   import { geometryForPiece, DOUBLE_SIDED_SHAPES } from './scene/geometry';
   import { colorForFamily, contrastingOutlineColor } from './scene/materials';
   import { getPieceData, snapPositionAlongRay, type PieceEntry } from './scene/snapping';
-  import { xraySliceCutoff, zoomSliceFraction } from './scene/xray';
+  import { heightWeightedDepth, xraySliceCutoff, zoomSliceFraction } from './scene/xray';
   import type { PlacedPiece } from './types';
 
   let { selectedPrefab = $bindable(null), placedPieces = $bindable([]), onUndo, onRedo }: {
@@ -59,6 +59,12 @@
     const controls = new OrbitControls(camera, renderer.domElement);
     controls.target.set(0, 0, 0);
     controls.enableDamping = true;
+    // Slower than the default (1) so each scroll notch moves the camera a
+    // smaller distance — with x-ray on, that's what keeps the depth cutoff
+    // sweeping past individually-spaced pieces one at a time instead of
+    // jumping past several closely-spaced ones (e.g. a wall's worth of
+    // adjacent segments) in a single notch and flipping them all at once.
+    controls.zoomSpeed = 0.5;
     // Hover-preview raycasting (see handlePointerMove) is pointless while
     // the user is mid-drag orbiting the camera — nothing is being placed,
     // so skip it entirely for the duration of the drag rather than paying
@@ -292,9 +298,11 @@
     // Piece-type classification (walls vs. beams vs. furniture) was tried
     // and dropped: name-matching had false positives (e.g. "Log Beam"
     // prefabs contain "wall") and a from-scratch geometry classifier was
-    // more complexity than the payoff justified. A plain depth slice needs
-    // none of that and gives a more predictable result the user can reason
-    // about while orbiting/zooming.
+    // more complexity than the payoff justified. Roofs/ceilings still fade
+    // before same-story floors, and deeper zoom still reaches lower
+    // stories — see heightWeightedDepth in xray.ts — but that comes from
+    // biasing the one depth number by world height, not from knowing what
+    // any given piece actually is.
     function updateXray() {
       if (!showXray) {
         for (const mesh of meshByPlacedId.values()) {
@@ -316,11 +324,28 @@
       // world space (positionMesh offsets it by piece.center on placement),
       // and placedGroup itself carries no transform of its own — so this
       // needs no matrixWorld lookup, unlike raycasting elsewhere in this file.
+      //
+      // Two passes: the height bias (see heightWeightedDepth in xray.ts)
+      // needs to know the build's lowest piece before it can bias anything,
+      // so raw depth/height are collected first and the biased depth
+      // computed once minY is known. rawDepthMin (unbiased) is also kept
+      // separately — see the paragraph below for why it, not the biased
+      // depthMin, is what drives zoomSliceFraction.
+      let minY = Infinity;
+      let rawDepthMin = Infinity;
+      const rawDepthByMesh = new Map<THREE.Mesh, number>();
+      for (const mesh of meshes) {
+        const rawDepth = mesh.position.clone().sub(camPos).dot(viewDir);
+        rawDepthByMesh.set(mesh, rawDepth);
+        if (rawDepth < rawDepthMin) rawDepthMin = rawDepth;
+        if (mesh.position.y < minY) minY = mesh.position.y;
+      }
+
       let depthMin = Infinity;
       let depthMax = -Infinity;
       const depthByMesh = new Map<THREE.Mesh, number>();
       for (const mesh of meshes) {
-        const depth = mesh.position.clone().sub(camPos).dot(viewDir);
+        const depth = heightWeightedDepth(rawDepthByMesh.get(mesh)!, mesh.position.y - minY);
         depthByMesh.set(mesh, depth);
         if (depth < depthMin) depthMin = depth;
         if (depth > depthMax) depthMax = depth;
@@ -328,10 +353,14 @@
 
       // How much of the depth range actually gets sliced is zoom-dependent
       // — see scene/xray.ts's module comment for why and its tests for the
-      // tuning itself; this file only wires depthMin (how close the camera
-      // currently is to the nearest placed piece, already computed above)
-      // into that pure math.
-      const sliceFraction = zoomSliceFraction(depthMin);
+      // tuning itself. Deliberately uses rawDepthMin (real, unbiased camera
+      // proximity) here rather than the height-biased depthMin below: a
+      // tall roof's height bias alone (at a FIXED, unchanged camera
+      // distance) would otherwise drag the biased depthMin down, which
+      // zoomSliceFraction would misread as "the camera zoomed in a lot" —
+      // see its own doc comment for the feedback loop that caused, found by
+      // direct simulation before this was wired up live.
+      const sliceFraction = zoomSliceFraction(rawDepthMin);
       const cutoff = xraySliceCutoff(depthMin, depthMax, sliceFraction);
 
       for (const mesh of meshes) {
