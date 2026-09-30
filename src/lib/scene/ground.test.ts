@@ -56,17 +56,17 @@ describe('ground', () => {
 });
 
 describe('groundSize', () => {
-  it('defaults to an odd cell count centred on a cell', () => {
+  it('defaults to an even cell count centred on a cell corner', () => {
     expect(groundSize([])).toBe(MIN_GROUND_CELLS * GRID_CELL);
-    expect(MIN_GROUND_CELLS % 2).toBe(1);
+    expect(MIN_GROUND_CELLS % 2).toBe(0);
   });
   it('stays default for builds well inside', () => {
     expect(groundSize([{ x: 10, z: -10, radius: 2 }])).toBe(MIN_GROUND_CELLS * GRID_CELL);
   });
-  it('grows symmetrically, keeping an odd cell count and the margin', () => {
+  it('grows symmetrically, keeping an even cell count and the margin', () => {
     for (const x of [25, 27, 40, 100.5]) {
       const size = groundSize([{ x, z: 0, radius: 1 }]);
-      expect(size / GRID_CELL % 2).toBe(1);
+      expect((size / GRID_CELL) % 2).toBe(0);
       expect(size / 2).toBeGreaterThanOrEqual(x + 1 + GROUND_EDGE_MARGIN);
       expect(size).toBeGreaterThan(MIN_GROUND_CELLS * GRID_CELL);
     }

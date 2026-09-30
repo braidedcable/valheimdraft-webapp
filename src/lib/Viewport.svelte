@@ -37,7 +37,7 @@
   let showXray = $state(false);
 
   const CAMERA_PRESETS: Record<string, THREE.Vector3> = {
-    // Offsets from the ground's centre (the middle of its middle grid cell).
+    // Offsets from the ground's centre (the corner where the four middle grid cells meet).
     iso: new THREE.Vector3(18, 18, 18),
     top: new THREE.Vector3(0, 27, 0.01), // slight z offset avoids OrbitControls' straight-up gimbal lock
     front: new THREE.Vector3(0, 4, 26),

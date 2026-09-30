@@ -52,24 +52,21 @@ export function canFlattenForward(dirX: number, dirZ: number): boolean {
 
 /** Side of one build-grid cell; pieces are laid out on 2x2 cells. */
 export const GRID_CELL = 2;
-/** Smallest ground: cells per side (odd, so the middle is the centre of a cell). */
-export const MIN_GROUND_CELLS = 31;
+/** Smallest ground: cells per side (even, so the middle is a cell corner). */
+export const MIN_GROUND_CELLS = 30;
 /** The ground always reaches at least this far past the outermost piece. */
 export const GROUND_EDGE_MARGIN = 6;
 
 /**
- * Ground side length (world units) for a build. The ground is an odd number
- * of GRID_CELL cells per side, centred on the origin (the centre of the middle
- * cell), and grows symmetrically so the centre never moves: it is wide enough
+ * Ground side length (world units) for a build. The ground is an even number
+ * of GRID_CELL cells per side, centred on the origin (the corner where the
+ * four middle cells meet), and grows symmetrically so the centre never moves: it is wide enough
  * that every piece stays GROUND_EDGE_MARGIN clear of the edge. `extents` is
  * each piece's x/z position plus a conservative horizontal radius.
  */
 export function groundSize(extents: { x: number; z: number; radius: number }[]): number {
   let reach = 0;
   for (const e of extents) reach = Math.max(reach, Math.abs(e.x) + e.radius, Math.abs(e.z) + e.radius);
-  const halfCells = Math.max(
-    (MIN_GROUND_CELLS - 1) / 2,
-    Math.ceil((reach + GROUND_EDGE_MARGIN) / GRID_CELL - 0.5)
-  );
-  return (2 * halfCells + 1) * GRID_CELL;
+  const halfCells = Math.max(MIN_GROUND_CELLS / 2, Math.ceil((reach + GROUND_EDGE_MARGIN) / GRID_CELL));
+  return 2 * halfCells * GRID_CELL;
 }
