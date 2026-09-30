@@ -1,7 +1,7 @@
 <script lang="ts">
   import type { PlacedPiece } from './types';
   import { serialize, deserialize } from './persistence';
-  import { encodeSceneToHash } from './shareUrl';
+  import ShareDialog from './ShareDialog.svelte';
   import FeedbackDialog from './FeedbackDialog.svelte';
 
   let {
@@ -29,26 +29,7 @@
   let fileInput: HTMLInputElement | undefined = $state();
   let showFeedback = $state(false);
 
-  let shareCopied = $state(false);
-  let shareError = $state<string | null>(null);
-  let shareResetTimer: ReturnType<typeof setTimeout> | undefined;
-
-  async function shareLink() {
-    shareError = null;
-    try {
-      const encoded = await encodeSceneToHash(placedPieces);
-      const url = `${location.origin}${location.pathname}#${encoded}`;
-      await navigator.clipboard.writeText(url);
-      shareCopied = true;
-      clearTimeout(shareResetTimer);
-      shareResetTimer = setTimeout(() => {
-        shareCopied = false;
-      }, 2000);
-    } catch (err) {
-      shareCopied = false;
-      shareError = err instanceof Error ? err.message : 'Could not create a share link.';
-    }
-  }
+  let showShare = $state(false);
 
   function exportLayout() {
     const json = serialize(placedPieces);
@@ -100,9 +81,6 @@
   {#if importError}
     <p class="error">{importError}</p>
   {/if}
-  {#if shareError}
-    <p class="error">{shareError}</p>
-  {/if}
   <button class="link-button" onclick={onUndo} disabled={!canUndo}>Undo</button>
   <button class="link-button" onclick={onRedo} disabled={!canRedo}>Redo</button>
   {#if placedPieces.length > 0}
@@ -112,7 +90,7 @@
   {/if}
   <button class="link-button" onclick={exportLayout}>Export</button>
   <button class="link-button" onclick={triggerImport}>Import</button>
-  <button class="link-button" onclick={shareLink}>{shareCopied ? 'Copied!' : 'Share'}</button>
+  <button class="link-button" onclick={() => (showShare = true)}>Share</button>
   <input
     bind:this={fileInput}
     type="file"
@@ -126,6 +104,7 @@
   <button class="link-button" onclick={() => (showFeedback = true)}>Report bug / suggest feature</button>
 </header>
 
+<ShareDialog bind:open={showShare} pieces={placedPieces} />
 <FeedbackDialog bind:open={showFeedback} pieceCount={placedPieces.length} />
 
 <style>

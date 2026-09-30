@@ -129,3 +129,13 @@ export async function decodeSceneFromHash(hash: string): Promise<PlacedPiece[] |
     return null;
   }
 }
+
+// Builds the full shareable URL from a location-like object and an encoded
+// scene. Uses origin + pathname only, so it works under a sub-path base
+// (e.g. Vite's '/valheimdraft-webapp/') and drops any existing search/hash.
+export function buildShareUrl(
+  loc: { origin: string; pathname: string },
+  encoded: string
+): string {
+  return `${loc.origin}${loc.pathname}#${encoded}`;
+}
