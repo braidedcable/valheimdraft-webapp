@@ -1,12 +1,14 @@
 <script lang="ts">
   import type { PlacedPiece } from './types';
-  import { serialize, deserialize } from './persistence';
+  import { serialize, deserializeScene } from './persistence';
+  import { GROUND_STEP, stepGroundLevel } from './scene/ground';
   import { encodeSceneToHash } from './shareUrl';
   import FeedbackDialog from './FeedbackDialog.svelte';
 
   let {
     placedPieces = $bindable(),
     showAttribution = $bindable(),
+    groundLevel = $bindable(0),
     canUndo,
     canRedo,
     onUndo,
@@ -15,6 +17,7 @@
   }: {
     placedPieces: PlacedPiece[];
     showAttribution: boolean;
+    groundLevel?: number;
     canUndo: boolean;
     canRedo: boolean;
     onUndo: () => void;
@@ -51,7 +54,7 @@
   }
 
   function exportLayout() {
-    const json = serialize(placedPieces);
+    const json = serialize(placedPieces, groundLevel);
     const blob = new Blob([json], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
@@ -74,8 +77,8 @@
     if (!file) return;
 
     const text = await file.text();
-    const pieces = deserialize(text);
-    if (pieces === null) {
+    const scene = deserializeScene(text);
+    if (scene === null) {
       importError = `"${file.name}" isn't a valid ValheimDraft layout file.`;
       return;
     }
@@ -86,7 +89,8 @@
     // array so a collision can't happen today, but minting fresh ids keeps
     // that guarantee true if a future "merge/append" import mode reuses
     // this same path alongside existing in-memory pieces.
-    placedPieces = pieces.map((piece) => ({ ...piece, id: crypto.randomUUID() }));
+    placedPieces = scene.pieces.map((piece) => ({ ...piece, id: crypto.randomUUID() }));
+    groundLevel = scene.groundLevel;
     importError = null;
   }
 </script>
@@ -103,6 +107,14 @@
   {#if shareError}
     <p class="error">{shareError}</p>
   {/if}
+  <span class="ground-control">
+    Ground: {groundLevel}
+    <button class="link-button" aria-label="Lower ground" onclick={() => (groundLevel = stepGroundLevel(groundLevel, -GROUND_STEP))}>−</button>
+    <button class="link-button" aria-label="Raise ground" onclick={() => (groundLevel = stepGroundLevel(groundLevel, GROUND_STEP))}>+</button>
+    {#if groundLevel !== 0}
+      <button class="link-button" onclick={() => (groundLevel = 0)}>Reset</button>
+    {/if}
+  </span>
   <button class="link-button" onclick={onUndo} disabled={!canUndo}>Undo</button>
   <button class="link-button" onclick={onRedo} disabled={!canRedo}>Redo</button>
   {#if placedPieces.length > 0}
@@ -161,6 +173,13 @@
   .link-button:disabled {
     color: #5a5f68;
     cursor: default;
+  }
+
+  .ground-control {
+    font-size: 0.85rem;
+    display: inline-flex;
+    gap: 0.4rem;
+    align-items: baseline;
   }
 
   .error {

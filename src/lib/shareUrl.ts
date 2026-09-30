@@ -1,4 +1,4 @@
-import { serialize, deserialize } from './persistence';
+import { serialize, deserializeScene, type LoadedScene } from './persistence';
 import type { PlacedPiece } from './types';
 
 // Encoded format: a one-character tag identifying how the rest of the
@@ -74,8 +74,8 @@ export class ShareUrlTooLongError extends Error {}
 // Throws ShareUrlTooLongError if the result would be unreasonably long —
 // callers (the Share button) should catch this and show a message rather
 // than handing back a giant, unusable link.
-export async function encodeSceneToHash(pieces: PlacedPiece[]): Promise<string> {
-  const json = serialize(pieces);
+export async function encodeSceneToHash(pieces: PlacedPiece[], groundLevel = 0): Promise<string> {
+  const json = serialize(pieces, groundLevel);
   const jsonBytes = new TextEncoder().encode(json);
 
   let tag: string;
@@ -105,6 +105,11 @@ export async function encodeSceneToHash(pieces: PlacedPiece[]): Promise<string> 
 // persistence.ts's deserialize() convention so callers can uniformly fall
 // back to a clean state.
 export async function decodeSceneFromHash(hash: string): Promise<PlacedPiece[] | null> {
+  return (await decodeSceneFromHashFull(hash))?.pieces ?? null;
+}
+
+// Like decodeSceneFromHash but also returns the ground level (0 if absent).
+export async function decodeSceneFromHashFull(hash: string): Promise<LoadedScene | null> {
   if (typeof hash !== 'string' || hash.length < 1) return null;
 
   const tag = hash[0];
@@ -124,7 +129,7 @@ export async function decodeSceneFromHash(hash: string): Promise<PlacedPiece[] |
     }
 
     const json = new TextDecoder().decode(jsonBytes);
-    return deserialize(json);
+    return deserializeScene(json);
   } catch {
     return null;
   }

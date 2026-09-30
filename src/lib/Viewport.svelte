@@ -8,7 +8,10 @@
   import { heightWeightedDepth, isInEdgeBand, xraySliceCutoff, zoomSliceFraction } from './scene/xray';
   import type { PlacedPiece } from './types';
 
-  let { selectedPrefab = $bindable(null), placedPieces = $bindable([]), onUndo, onRedo }: {
+  import { groundLevelToY, isCameraBelowGround, groundOpacity, ghostRestY, canFlattenForward } from './scene/ground';
+
+  let { selectedPrefab = $bindable(null), placedPieces = $bindable([]), onUndo, onRedo, groundLevel = 0 }: {
+    groundLevel?: number;
     selectedPrefab: string | null;
     placedPieces: PlacedPiece[];
     onUndo: () => void;
@@ -65,6 +68,9 @@
     // jumping past several closely-spaced ones (e.g. a wall's worth of
     // adjacent segments) in a single notch and flipping them all at once.
     controls.zoomSpeed = 0.5;
+    // Explicitly unclamped so the camera can orbit below the ground plane.
+    controls.minPolarAngle = 0;
+    controls.maxPolarAngle = Math.PI;
     // Hover-preview raycasting (see handlePointerMove) is pointless while
     // the user is mid-drag orbiting the camera — nothing is being placed,
     // so skip it entirely for the duration of the drag rather than paying
@@ -89,12 +95,29 @@
     sun.position.set(10, 20, 10);
     scene.add(sun);
 
-    const ground = new THREE.Mesh(
-      new THREE.PlaneGeometry(60, 60),
-      new THREE.MeshStandardMaterial({ color: 0x2e3b2e })
-    );
+    // DoubleSide so the cursor ray can hit the ground from below too (pieces
+    // can hang from its underside). From below it is drawn translucent and
+    // without depth writes (see ground.ts / updateGroundForCamera).
+    const groundMaterial = new THREE.MeshStandardMaterial({ color: 0x2e3b2e, side: THREE.DoubleSide });
+    const ground = new THREE.Mesh(new THREE.PlaneGeometry(60, 60), groundMaterial);
     ground.rotation.x = -Math.PI / 2;
     scene.add(ground);
+    let groundY = 0;
+    function updateGroundForCamera() {
+      const opacity = groundOpacity(isCameraBelowGround(camera.position.y, groundY));
+      const transparent = opacity < 1;
+      if (groundMaterial.transparent !== transparent) {
+        groundMaterial.transparent = transparent;
+        groundMaterial.depthWrite = !transparent;
+        groundMaterial.needsUpdate = true;
+      }
+      groundMaterial.opacity = opacity;
+    }
+    $effect(() => {
+      groundY = groundLevelToY(groundLevel);
+      ground.position.y = groundY;
+      updateGroundForCamera();
+    });
 
     // Building a piece's geometry (and, worse, its EdgesGeometry — an edge
     // scan over every triangle) is one of the costlier things this file
@@ -494,8 +517,10 @@
       const piece = getPieceData(prefab)!;
       const rot = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), ghostRotationY);
       // Rest the piece's true mesh bottom on whichever surface the cursor
-      // is actually over — the ground (hitPoint.y ~= 0, same as before) or
+      // is actually over — the ground (hitPoint.y = current ground level) or
       // a placed piece's mesh (hitPoint.y = that surface's real height).
+      // Looking upward at an underside (camera below ground), the piece
+      // hangs from the surface instead — see ghostRestY in ground.ts.
       // Either way this only needs to land within SNAP_RADIUS of the real
       // snap point for snapPositionAlongRay() below to lock onto it exactly
       // (or, failing that, for the ray-based fallback inside it to find the
@@ -503,7 +528,7 @@
       // rotation leaves Y unchanged, so center.y is still a valid vertical
       // offset post-rotation.
       const tentativePos = surfaceHit.point.clone();
-      tentativePos.y = surfaceHit.point.y + piece.bounds.y / 2 - piece.center.y;
+      tentativePos.y = ghostRestY(surfaceHit.point.y, raycaster.ray.direction.y, piece.bounds.y, piece.center.y);
 
       // Exclude the piece currently being moved from its own snap targets
       // — otherwise it'd snap to its own pre-move position. Also exclude
@@ -840,7 +865,15 @@
       if (panKeys.size > 0) {
         const forward = new THREE.Vector3();
         camera.getWorldDirection(forward);
-        forward.y = 0;
+        // Looking straight up/down (e.g. from below the ground) has no
+        // horizontal heading; fall back to the camera's up vector's
+        // horizontal part so W/S still move somewhere sensible.
+        if (canFlattenForward(forward.x, forward.z)) {
+          forward.y = 0;
+        } else {
+          forward.set(camera.up.x, 0, camera.up.z);
+          if (!canFlattenForward(forward.x, forward.z)) forward.set(0, 0, -1);
+        }
         forward.normalize();
         const right = new THREE.Vector3().crossVectors(forward, camera.up).normalize();
 
@@ -857,6 +890,7 @@
       }
 
       controls.update();
+      updateGroundForCamera();
       renderer.render(scene, camera);
     }
     animate();
