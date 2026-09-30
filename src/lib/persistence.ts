@@ -1,3 +1,4 @@
+import { sanitizeGroundLevel } from './scene/ground';
 import type { PlacedPiece, Vec3, Quat } from './types';
 
 // Versioned envelope so future format changes (new fields, migrations) have
@@ -5,14 +6,20 @@ import type { PlacedPiece, Vec3, Quat } from './types';
 export interface SceneEnvelopeV1 {
   version: 1;
   pieces: PlacedPiece[];
+  // Optional, backward compatible: payloads written before ground level
+  // existed lack it and load as level 0.
+  groundLevel?: number;
 }
 
 export type SceneEnvelope = SceneEnvelopeV1;
 
 export const CURRENT_VERSION = 1 as const;
 
-export function serialize(pieces: PlacedPiece[]): string {
+export function serialize(pieces: PlacedPiece[], groundLevel = 0): string {
   const envelope: SceneEnvelopeV1 = { version: CURRENT_VERSION, pieces };
+  // Omitted at 0 so default-level payloads (and share links) stay unchanged.
+  const level = sanitizeGroundLevel(groundLevel);
+  if (level !== 0) envelope.groundLevel = level;
   return JSON.stringify(envelope);
 }
 
@@ -47,6 +54,15 @@ function isPlacedPiece(value: unknown): value is PlacedPiece {
 // upload/URL-hash import later). Never throws — returns null on anything
 // malformed so callers can fall back to a clean empty state.
 export function deserialize(raw: string): PlacedPiece[] | null {
+  return deserializeScene(raw)?.pieces ?? null;
+}
+
+export interface LoadedScene {
+  pieces: PlacedPiece[];
+  groundLevel: number;
+}
+
+export function deserializeScene(raw: string): LoadedScene | null {
   let parsed: unknown;
   try {
     parsed = JSON.parse(raw);
@@ -61,5 +77,8 @@ export function deserialize(raw: string): PlacedPiece[] | null {
   if (!Array.isArray(envelope.pieces)) return null;
   if (!envelope.pieces.every(isPlacedPiece)) return null;
 
-  return envelope.pieces as PlacedPiece[];
+  return {
+    pieces: envelope.pieces as PlacedPiece[],
+    groundLevel: sanitizeGroundLevel(envelope.groundLevel),
+  };
 }

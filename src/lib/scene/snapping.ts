@@ -107,7 +107,7 @@ export function snapPosition(
 // once we already have a good tentative position; this constant compensates
 // for imprecise aiming at physically thin pieces (e.g. a 0.55m-deep wall,
 // where missing the mesh by more than half its depth sends the raycast
-// straight through to the ground, a full piece-height below the real
+// straight through to the ground (at whatever the current ground level is; nothing here assumes y=0), a full piece-height below the real
 // connection point — see the measured wall-depth failure this was built to
 // fix).
 const RAY_SNAP_REACH = 1.5;

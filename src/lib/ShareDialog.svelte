@@ -47,12 +47,11 @@
     copied = false;
     copyFailed = false;
     const snapshot = pieces;
-    void groundLevel;
     if (snapshot.length === 0) return;
     loading = true;
     try {
       // Single encode call site; add groundLevel here once supported.
-      const encoded = await encodeSceneToHash(snapshot);
+      const encoded = await encodeSceneToHash(snapshot, groundLevel ?? 0);
       if (id !== requestId) return;
       url = buildShareUrl(location, encoded);
     } catch (err) {

@@ -8,7 +8,8 @@
   import { pushRecent, loadRecent, saveRecent } from './lib/recentPieces';
   import Toolbar from './lib/Toolbar.svelte';
   import { serialize, deserialize } from './lib/persistence';
-  import { decodeSceneFromHash } from './lib/shareUrl';
+  import { decodeSceneFromHashFull } from './lib/shareUrl';
+  import { sanitizeGroundLevel } from './lib/scene/ground';
   import type { PlacedPiece } from './lib/types';
 
   const STORAGE_KEY = 'valheimdraft:scene:v1';
@@ -23,6 +24,25 @@
       return [];
     }
   }
+
+  // Ground level is a view setting: own storage key, not in undo history.
+  const GROUND_STORAGE_KEY = 'valheimdraft:ground:v1';
+  function restoreGroundLevel(): number {
+    try {
+      const raw = localStorage.getItem(GROUND_STORAGE_KEY);
+      return raw === null ? 0 : sanitizeGroundLevel(Number(raw));
+    } catch {
+      return 0;
+    }
+  }
+  let groundLevel = $state(restoreGroundLevel());
+  $effect(() => {
+    try {
+      localStorage.setItem(GROUND_STORAGE_KEY, String(groundLevel));
+    } catch {
+      // Storage unavailable — in-memory only.
+    }
+  });
 
   let showAttribution = $state(false);
   // Which palette piece is selected does NOT participate in undo history —
@@ -147,8 +167,9 @@
     const encoded = location.hash.slice(1);
     history.replaceState(null, '', location.pathname + location.search);
 
-    decodeSceneFromHash(encoded).then((pieces) => {
-      if (pieces === null) {
+    decodeSceneFromHashFull(encoded).then((scene) => {
+      const pieces = scene?.pieces ?? null;
+      if (scene === null || pieces === null) {
         sharedLinkError = 'That share link is invalid or corrupted — showing your saved layout instead.';
         return;
       }
@@ -163,6 +184,7 @@
       // `past` yet), which matches "undo does nothing surprising".
       suppressHistoryPush = true;
       placedPieces = pieces;
+      groundLevel = scene.groundLevel;
     });
   }
 </script>
@@ -171,6 +193,7 @@
   <Toolbar
     bind:placedPieces
     bind:showAttribution
+    bind:groundLevel
     {canUndo}
     {canRedo}
     onUndo={undo}
@@ -189,7 +212,7 @@
         <CostTally {placedPieces} />
       </aside>
       <div class="viewport-wrap">
-        <Viewport bind:selectedPrefab bind:placedPieces onUndo={undo} onRedo={redo} {onPlace} />
+        <Viewport {groundLevel} bind:selectedPrefab bind:placedPieces onUndo={undo} onRedo={redo} {onPlace} />
       </div>
       <aside class="right">
         <RecentPieces {recent} bind:selectedPrefab onClear={clearRecent} />
