@@ -4,6 +4,8 @@
   import PiecePalette from './lib/PiecePalette.svelte';
   import CostTally from './lib/CostTally.svelte';
   import Attribution from './lib/Attribution.svelte';
+  import RecentPieces from './lib/RecentPieces.svelte';
+  import { pushRecent, loadRecent, saveRecent } from './lib/recentPieces';
   import Toolbar from './lib/Toolbar.svelte';
   import { serialize, deserialize } from './lib/persistence';
   import { decodeSceneFromHash } from './lib/shareUrl';
@@ -28,6 +30,15 @@
   // not also yank the palette selection out from under the user.
   let selectedPrefab = $state<string | null>(null);
   let placedPieces = $state<PlacedPiece[]>(restorePieces());
+  let recent = $state<string[]>(loadRecent());
+  function onPlace(prefab: string) {
+    recent = pushRecent(recent, prefab);
+    saveRecent(recent);
+  }
+  function clearRecent() {
+    recent = [];
+    saveRecent(recent);
+  }
   let sharedLinkError = $state<string | null>(null);
 
   $effect(() => {
@@ -178,8 +189,11 @@
         <CostTally {placedPieces} />
       </aside>
       <div class="viewport-wrap">
-        <Viewport bind:selectedPrefab bind:placedPieces onUndo={undo} onRedo={redo} />
+        <Viewport bind:selectedPrefab bind:placedPieces onUndo={undo} onRedo={redo} {onPlace} />
       </div>
+      <aside class="right">
+        <RecentPieces {recent} bind:selectedPrefab onClear={clearRecent} />
+      </aside>
     {/if}
   </main>
 
@@ -224,6 +238,11 @@
     display: flex;
     flex-direction: column;
     min-height: 0;
+  }
+
+  aside.right {
+    border-right: none;
+    border-left: 1px solid #2a2d33;
   }
 
   .viewport-wrap {

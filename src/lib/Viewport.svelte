@@ -8,7 +8,8 @@
   import { heightWeightedDepth, isInEdgeBand, xraySliceCutoff, zoomSliceFraction } from './scene/xray';
   import type { PlacedPiece } from './types';
 
-  let { selectedPrefab = $bindable(null), placedPieces = $bindable([]), onUndo, onRedo }: {
+  let { selectedPrefab = $bindable(null), placedPieces = $bindable([]), onUndo, onRedo, onPlace }: {
+    onPlace?: (prefab: string) => void;
     selectedPrefab: string | null;
     placedPieces: PlacedPiece[];
     onUndo: () => void;
@@ -573,6 +574,7 @@
         movingPieceId = null;
       } else if (selectedPrefab) {
         placedPieces = [...placedPieces, { id: crypto.randomUUID(), prefab: selectedPrefab, pos, rot }];
+        onPlace?.(selectedPrefab);
       }
     }
 
