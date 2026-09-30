@@ -8,7 +8,7 @@
   import { heightWeightedDepth, isInEdgeBand, xraySliceCutoff, zoomSliceFraction } from './scene/xray';
   import type { PlacedPiece } from './types';
 
-  import { groundLevelToY, isCameraBelowGround, groundOpacity, ghostRestY, canFlattenForward } from './scene/ground';
+  import { groundLevelToY, isCameraBelowGround, groundOpacity, ghostRestY, canFlattenForward, groundSize } from './scene/ground';
 
   let { selectedPrefab = $bindable(null), placedPieces = $bindable([]), onUndo, onRedo, onPlace, groundLevel = 0 }: {
     groundLevel?: number;
@@ -37,9 +37,10 @@
   let showXray = $state(false);
 
   const CAMERA_PRESETS: Record<string, THREE.Vector3> = {
-    iso: new THREE.Vector3(14, 14, 14),
-    top: new THREE.Vector3(0, 20, 0.01), // slight z offset avoids OrbitControls' straight-up gimbal lock
-    front: new THREE.Vector3(0, 3, 20),
+    // Offsets from the ground's centre (the middle of its middle grid cell).
+    iso: new THREE.Vector3(18, 18, 18),
+    top: new THREE.Vector3(0, 27, 0.01), // slight z offset avoids OrbitControls' straight-up gimbal lock
+    front: new THREE.Vector3(0, 4, 26),
   };
 
   let setPreset: (name: keyof typeof CAMERA_PRESETS) => void = () => {};
@@ -49,7 +50,7 @@
     scene.background = new THREE.Color(0x1a1d22);
 
     const camera = new THREE.PerspectiveCamera(50, canvas.clientWidth / canvas.clientHeight, 0.1, 500);
-    camera.position.copy(CAMERA_PRESETS.iso);
+    camera.position.copy(CAMERA_PRESETS.iso).y += groundLevelToY(untrack(() => groundLevel));
 
     const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
     renderer.setSize(canvas.clientWidth, canvas.clientHeight);
@@ -61,7 +62,7 @@
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
 
     const controls = new OrbitControls(camera, renderer.domElement);
-    controls.target.set(0, 0, 0);
+    controls.target.set(0, groundLevelToY(untrack(() => groundLevel)), 0);
     controls.enableDamping = true;
     // Slower than the default (1) so each scroll notch moves the camera a
     // smaller distance — with x-ray on, that's what keeps the depth cutoff
@@ -86,8 +87,8 @@
     });
 
     setPreset = (name) => {
-      camera.position.copy(CAMERA_PRESETS[name]);
-      controls.target.set(0, 0, 0);
+      camera.position.copy(CAMERA_PRESETS[name]).y += groundY;
+      controls.target.set(0, groundY, 0);
       controls.update();
     };
 
@@ -100,7 +101,7 @@
     // can hang from its underside). From below it is drawn translucent and
     // without depth writes (see ground.ts / updateGroundForCamera).
     const groundMaterial = new THREE.MeshStandardMaterial({ color: 0x2e3b2e, side: THREE.DoubleSide });
-    const ground = new THREE.Mesh(new THREE.PlaneGeometry(60, 60), groundMaterial);
+    const ground = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), groundMaterial);
     ground.rotation.x = -Math.PI / 2;
     scene.add(ground);
     let groundY = 0;
@@ -114,6 +115,16 @@
       }
       groundMaterial.opacity = opacity;
     }
+    // Ground side length grows with the build (see groundSize); the unit
+    // plane is scaled rather than rebuilt. Local y maps to world -z.
+    $effect(() => {
+      const extents = placedPieces.map((p) => {
+        const b = getPieceData(p.prefab)?.bounds;
+        return { x: p.pos.x, z: p.pos.z, radius: b ? Math.hypot(b.x, b.z) / 2 : 0 };
+      });
+      const size = groundSize(extents);
+      ground.scale.set(size, size, 1);
+    });
     $effect(() => {
       groundY = groundLevelToY(groundLevel);
       ground.position.y = groundY;

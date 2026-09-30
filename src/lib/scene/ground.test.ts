@@ -9,6 +9,10 @@ import {
   groundOpacity,
   ghostRestY,
   canFlattenForward,
+  groundSize,
+  MIN_GROUND_CELLS,
+  GRID_CELL,
+  GROUND_EDGE_MARGIN,
 } from './ground';
 
 describe('ground', () => {
@@ -48,5 +52,26 @@ describe('ground', () => {
   it('flatten guard', () => {
     expect(canFlattenForward(0, 0)).toBe(false);
     expect(canFlattenForward(0, 1)).toBe(true);
+  });
+});
+
+describe('groundSize', () => {
+  it('defaults to an odd cell count centred on a cell', () => {
+    expect(groundSize([])).toBe(MIN_GROUND_CELLS * GRID_CELL);
+    expect(MIN_GROUND_CELLS % 2).toBe(1);
+  });
+  it('stays default for builds well inside', () => {
+    expect(groundSize([{ x: 10, z: -10, radius: 2 }])).toBe(MIN_GROUND_CELLS * GRID_CELL);
+  });
+  it('grows symmetrically, keeping an odd cell count and the margin', () => {
+    for (const x of [25, 27, 40, 100.5]) {
+      const size = groundSize([{ x, z: 0, radius: 1 }]);
+      expect(size / GRID_CELL % 2).toBe(1);
+      expect(size / 2).toBeGreaterThanOrEqual(x + 1 + GROUND_EDGE_MARGIN);
+      expect(size).toBeGreaterThan(MIN_GROUND_CELLS * GRID_CELL);
+    }
+  });
+  it('uses the most distant axis and negative coordinates', () => {
+    expect(groundSize([{ x: 0, z: -60, radius: 0 }])).toBe(groundSize([{ x: 60, z: 0, radius: 0 }]));
   });
 });
