@@ -1,11 +1,10 @@
 <script lang="ts">
-  import { encodeSceneToHash, buildShareUrl } from './shareUrl';
+  import { encodeSceneToCode, MAX_HASH_LENGTH, buildShareUrl } from './shareUrl';
   import type { PlacedPiece } from './types';
 
   let {
     open = $bindable(false),
     pieces,
-    // Reserved: pass through to encodeSceneToHash once it accepts a ground level.
     groundLevel = undefined,
   }: {
     open: boolean;
@@ -16,9 +15,12 @@
   let dialogEl: HTMLDialogElement | undefined = $state();
   let inputEl: HTMLInputElement | undefined = $state();
   let url = $state('');
+  let code = $state('');
+  let urlTooLong = $state(false);
+  let codeEl: HTMLTextAreaElement | undefined = $state();
+  let copiedWhat = $state<'link' | 'code' | null>(null);
   let error = $state<string | null>(null);
   let loading = $state(false);
-  let copied = $state(false);
   let copyFailed = $state(false);
   let copyTimer: ReturnType<typeof setTimeout> | undefined;
   let requestId = 0;
@@ -43,17 +45,21 @@
   async function generate() {
     const id = ++requestId;
     url = '';
+    code = '';
+    urlTooLong = false;
     error = null;
-    copied = false;
+    copiedWhat = null;
     copyFailed = false;
     const snapshot = pieces;
     if (snapshot.length === 0) return;
     loading = true;
     try {
-      // Single encode call site; add groundLevel here once supported.
-      const encoded = await encodeSceneToHash(snapshot, groundLevel ?? 0);
+      const encoded = await encodeSceneToCode(snapshot, groundLevel ?? 0);
       if (id !== requestId) return;
-      url = buildShareUrl(location, encoded);
+      code = encoded;
+      // Long builds can't reliably fit in a URL; the code always works.
+      urlTooLong = encoded.length > MAX_HASH_LENGTH;
+      url = urlTooLong ? '' : buildShareUrl(location, encoded);
     } catch (err) {
       if (id !== requestId) return;
       error =
@@ -69,15 +75,16 @@
     inputEl?.select();
   }
 
-  async function copy() {
-    if (!url) return;
+  async function copy(what: 'link' | 'code') {
+    const text = what === 'link' ? url : code;
+    if (!text) return;
     copyFailed = false;
     let ok = false;
     try {
-      await navigator.clipboard.writeText(url);
+      await navigator.clipboard.writeText(text);
       ok = true;
     } catch {
-      selectAll();
+      (what === 'link' ? inputEl : codeEl)?.select();
       try {
         ok = document.execCommand('copy');
       } catch {
@@ -85,12 +92,12 @@
       }
     }
     if (ok) {
-      copied = true;
+      copiedWhat = what;
       clearTimeout(copyTimer);
-      copyTimer = setTimeout(() => (copied = false), 2000);
+      copyTimer = setTimeout(() => (copiedWhat = null), 2000);
     } else {
       copyFailed = true;
-      selectAll();
+      (what === 'link' ? inputEl : codeEl)?.select();
     }
   }
 
@@ -99,9 +106,11 @@
     requestId++;
     clearTimeout(copyTimer);
     url = '';
+    code = '';
+    urlTooLong = false;
     error = null;
     loading = false;
-    copied = false;
+    copiedWhat = null;
     copyFailed = false;
   }
 
@@ -121,32 +130,53 @@
     {:else if error}
       <p class="error" role="alert">{error}</p>
       <p class="hint">You can use Export to save your build as a file instead.</p>
-    {:else if loading || !url}
+    {:else if loading || !code}
       <p class="hint">Creating link…</p>
     {:else}
-      <p class="hint">Anyone with this link can open a copy of your build.</p>
-      <input
-        bind:this={inputEl}
-        type="text"
-        readonly
-        value={url}
-        aria-label="Share link"
-        onfocus={selectAll}
-        onclick={selectAll}
-      />
       <p class="hint">
-        {pieces.length} piece{pieces.length === 1 ? '' : 's'} · {url.length.toLocaleString()} characters
+        {pieces.length} piece{pieces.length === 1 ? '' : 's'}
       </p>
+      {#if url}
+        <label class="field">
+          Link
+          <input
+            bind:this={inputEl}
+            type="text"
+            readonly
+            value={url}
+            aria-label="Share link"
+            onfocus={selectAll}
+            onclick={selectAll}
+          />
+        </label>
+        <button type="button" class="primary small" onclick={() => copy('link')}>
+          {copiedWhat === 'link' ? 'Copied!' : 'Copy link'}
+        </button>
+      {:else if urlTooLong}
+        <p class="hint">This build is too large for a link — use the build code below instead.</p>
+      {/if}
+      <label class="field">
+        Build code <span class="hint">({code.length.toLocaleString()} characters — paste it via Import code)</span>
+        <textarea
+          bind:this={codeEl}
+          readonly
+          rows="5"
+          value={code}
+          aria-label="Build code"
+          onfocus={(e) => e.currentTarget.select()}
+          onclick={(e) => e.currentTarget.select()}
+        ></textarea>
+      </label>
+      <button type="button" class="primary small" onclick={() => copy('code')}>
+        {copiedWhat === 'code' ? 'Copied!' : 'Copy code'}
+      </button>
       {#if copyFailed}
-        <p class="error">Couldn't copy automatically. The link is selected; press Ctrl+C.</p>
+        <p class="error">Couldn't copy automatically. The text is selected; press Ctrl+C.</p>
       {/if}
     {/if}
 
     <div class="actions">
       <button type="button" class="link-button" onclick={() => dialogEl?.close()}>Close</button>
-      <button type="button" class="primary" onclick={copy} disabled={!url || !!error || pieces.length === 0}>
-        {copied ? 'Copied!' : 'Copy link'}
-      </button>
     </div>
   </div>
 </dialog>
@@ -193,6 +223,27 @@
     font-size: 0.8rem;
     width: 100%;
     box-sizing: border-box;
+  }
+  .field {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+    font-size: 0.85rem;
+  }
+  textarea {
+    background: #14161a;
+    color: #e8e8e8;
+    border: 1px solid #2a2d33;
+    border-radius: 4px;
+    padding: 0.5rem;
+    font: 0.75rem monospace;
+    width: 100%;
+    box-sizing: border-box;
+    resize: vertical;
+    word-break: break-all;
+  }
+  .primary.small {
+    align-self: flex-start;
   }
   .actions {
     display: flex;

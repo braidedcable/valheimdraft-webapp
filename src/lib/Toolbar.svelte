@@ -3,6 +3,7 @@
   import { serialize, deserializeScene } from './persistence';
   import { GROUND_STEP, stepGroundLevel } from './scene/ground';
   import ShareDialog from './ShareDialog.svelte';
+  import ImportCodeDialog from './ImportCodeDialog.svelte';
   import FeedbackDialog from './FeedbackDialog.svelte';
 
   let {
@@ -31,6 +32,7 @@
   let importError = $state<string | null>(null);
   let fileInput: HTMLInputElement | undefined = $state();
   let showFeedback = $state(false);
+  let showImportCode = $state(false);
 
   let showShare = $state(false);
 
@@ -102,6 +104,7 @@
   {/if}
   <button class="link-button" onclick={exportLayout}>Export</button>
   <button class="link-button" onclick={triggerImport}>Import</button>
+  <button class="link-button" onclick={() => (showImportCode = true)}>Import code</button>
   <button class="link-button" onclick={() => (showShare = true)}>Share</button>
   <input
     bind:this={fileInput}
@@ -116,6 +119,13 @@
   <button class="link-button" onclick={() => (showFeedback = true)}>Report bug / suggest feature</button>
 </header>
 
+<ImportCodeDialog
+  bind:open={showImportCode}
+  onLoad={(pieces, level) => {
+    placedPieces = pieces;
+    groundLevel = level;
+  }}
+/>
 <ShareDialog bind:open={showShare} pieces={placedPieces} {groundLevel} />
 <FeedbackDialog bind:open={showFeedback} pieceCount={placedPieces.length} />
 

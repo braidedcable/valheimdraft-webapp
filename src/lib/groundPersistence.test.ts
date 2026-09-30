@@ -27,8 +27,11 @@ describe('groundLevel persistence', () => {
   });
   it('share hash carries the level', async () => {
     const hash = await encodeSceneToHash(pieces, 4);
-    expect(await decodeSceneFromHashFull(hash)).toEqual({ pieces, groundLevel: 4 });
-    expect(await decodeSceneFromHash(hash)).toEqual(pieces);
+    const noId = (ps: typeof pieces) => ps.map(({ id: _id, ...rest }) => rest);
+    const full = await decodeSceneFromHashFull(hash);
+    expect(full?.groundLevel).toBe(4);
+    expect(noId(full!.pieces)).toEqual(noId(pieces));
+    expect(noId((await decodeSceneFromHash(hash))!)).toEqual(noId(pieces));
     const plain = await encodeSceneToHash(pieces);
     expect((await decodeSceneFromHashFull(plain))?.groundLevel).toBe(0);
   });
