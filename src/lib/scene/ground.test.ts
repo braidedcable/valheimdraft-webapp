@@ -36,6 +36,9 @@ describe('ground', () => {
     expect(groundOpacity(true)).toBeLessThan(1);
     expect(groundOpacity(true)).toBeGreaterThan(0);
   });
+  it('ground is translucent above too when x-ray is on', () => {
+    expect(groundOpacity(false, true)).toBe(groundOpacity(true));
+  });
   it('rests on surface looking down, hangs looking up', () => {
     expect(ghostRestY(2, -0.5, 4, 0)).toBe(4);
     expect(ghostRestY(2, -0.5, 4, 1)).toBe(3);

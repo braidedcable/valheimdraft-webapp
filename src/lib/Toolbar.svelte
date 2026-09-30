@@ -88,12 +88,10 @@
     <p class="error">{importError}</p>
   {/if}
   <span class="ground-control">
-    Ground: {groundLevel}
+    <span class="ground-readout">Ground: {groundLevel}</span>
     <button class="link-button" aria-label="Lower ground" onclick={() => (groundLevel = stepGroundLevel(groundLevel, -GROUND_STEP))}>−</button>
     <button class="link-button" aria-label="Raise ground" onclick={() => (groundLevel = stepGroundLevel(groundLevel, GROUND_STEP))}>+</button>
-    {#if groundLevel !== 0}
-      <button class="link-button" onclick={() => (groundLevel = 0)}>Reset</button>
-    {/if}
+    <button class="link-button" onclick={() => (groundLevel = 0)} disabled={groundLevel === 0}>Reset</button>
   </span>
   <button class="link-button" onclick={onUndo} disabled={!canUndo}>Undo</button>
   <button class="link-button" onclick={onRedo} disabled={!canRedo}>Redo</button>
@@ -169,6 +167,12 @@
     display: inline-flex;
     gap: 0.4rem;
     align-items: baseline;
+  }
+
+  .ground-readout {
+    display: inline-block;
+    min-width: 5.5em;
+    font-variant-numeric: tabular-nums;
   }
 
   .error {

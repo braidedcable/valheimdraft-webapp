@@ -105,7 +105,7 @@
     scene.add(ground);
     let groundY = 0;
     function updateGroundForCamera() {
-      const opacity = groundOpacity(isCameraBelowGround(camera.position.y, groundY));
+      const opacity = groundOpacity(isCameraBelowGround(camera.position.y, groundY), showXray);
       const transparent = opacity < 1;
       if (groundMaterial.transparent !== transparent) {
         groundMaterial.transparent = transparent;

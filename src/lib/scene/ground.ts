@@ -29,8 +29,9 @@ export function isCameraBelowGround(cameraY: number, groundY: number): boolean {
   return cameraY < groundY;
 }
 
-export function groundOpacity(below: boolean): number {
-  return below ? GROUND_OPACITY_BELOW : GROUND_OPACITY_ABOVE;
+// X-ray mode keeps the ground see-through from any angle, like the pieces it fades.
+export function groundOpacity(below: boolean, xray = false): number {
+  return below || xray ? GROUND_OPACITY_BELOW : GROUND_OPACITY_ABOVE;
 }
 
 /**
